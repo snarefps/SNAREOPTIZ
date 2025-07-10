@@ -1103,19 +1103,21 @@ draw_graph() {
 # Advanced UI Functions
 show_advanced_menu() {
     local width=70
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -e "${CYAN}║${NC}                    ${GREEN}SNARE OPTIZ ADVANCED MENU${NC}                    ${CYAN}║${NC}"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}                    ${PURPLE}⚡ SNARE OPTIZ ADVANCED MENU ⚡${NC}                    ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[A]${NC} 🎮 Server Profiles ${YELLOW}[Specialized Optimizations]${NC}                  ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[B]${NC} 📊 Live System Monitor ${YELLOW}[Real-time Performance]${NC}                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[C]${NC} 📝 Generate System Report ${YELLOW}[Detailed Analysis]${NC}                  ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[D]${NC} 🔍 System Diagnostics ${YELLOW}[Problem Detection]${NC}                      ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[F]${NC} 🌐 Network Bandwidth Limiter ${YELLOW}[wondershaper]${NC}                   ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}  ${RED}[X]${NC} ⬅️  Return to Main Menu                                           ${CYAN}│${NC}"
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
     echo
-    echo -e "${GREEN}A.${NC} Server Profiles ${CYAN}[Specialized Optimizations]${NC}"
-    echo -e "${GREEN}B.${NC} Live System Monitor ${CYAN}[Real-time Performance]${NC}"
-    echo -e "${GREEN}C.${NC} Generate System Report ${CYAN}[Detailed Analysis]${NC}"
-    echo -e "${GREEN}D.${NC} System Diagnostics ${CYAN}[Problem Detection]${NC}"
-    echo -e "${GREEN}E.${NC} Return to Main Menu"
-    echo -e "${GREEN}F.${NC} Network Bandwidth Limiter ${CYAN}[wondershaper]${NC}"
-    echo
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -n "Enter your choice [A-F]: "
+    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[A/B/C/D/F/X]${NC}: "
 }
 
 limit_bandwidth() {
@@ -1563,14 +1565,15 @@ while true; do
             while true; do
                 clear
                 show_advanced_menu
-                read advanced_choice
-                case $advanced_choice in
-                    [Aa])
+                read -n 1 -r advanced_choice
+                echo
+                case ${advanced_choice^^} in
+                    A)
                         echo -e "\n${CYAN}Select Server Profile:${NC}"
-                        echo "1. Game Server"
-                        echo "2. Web Server"
-                        echo "3. Database Server"
-                        echo "4. Streaming Server"
+                        echo "1. 🎮 Game Server"
+                        echo "2. 🌐 Web Server"
+                        echo "3. 💾 Database Server"
+                        echo "4. 📺 Streaming Server"
                         echo -n "Enter choice [1-4]: "
                         read profile_choice
                         case $profile_choice in
@@ -1581,14 +1584,14 @@ while true; do
                             *) error_msg "Invalid profile choice" ;;
                         esac
                         ;;
-                    [Bb]) show_live_stats ;;
-                    [Cc]) generate_report ;;
-                    [Dd]) run_diagnostics ;;
-                    [Ff]) limit_bandwidth ;;
-                    [Ee]) break ;;
+                    B) show_live_stats ;;
+                    C) generate_report ;;
+                    D) run_diagnostics ;;
+                    F) limit_bandwidth ;;
+                    X|Q) break ;;
                     *) error_msg "Invalid advanced option" ;;
                 esac
-                if [[ $advanced_choice != [Bb] ]]; then
+                if [[ ${advanced_choice^^} != "B" ]]; then
                     echo
                     read -p "Press Enter to return to advanced menu..."
                 fi
