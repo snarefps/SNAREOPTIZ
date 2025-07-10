@@ -38,9 +38,26 @@ chmod +x /opt/snareoptiz/mainscript.sh
 # Create symlink for easy access
 ln -sf /opt/snareoptiz/mainscript.sh /usr/local/bin/optiz
 
+# Update system packages
+echo "Updating system packages..."
+if command -v apt-get &> /dev/null; then
+    echo "Using apt package manager..."
+    apt-get update
+    apt-get upgrade -y
+    apt-get dist-upgrade -y
+elif command -v yum &> /dev/null; then
+    echo "Using yum package manager..."
+    yum update -y
+elif command -v dnf &> /dev/null; then
+    echo "Using dnf package manager..."
+    dnf update -y
+else
+    echo "Warning: No supported package manager found."
+fi
+
 # Check for required dependencies
 echo "Checking dependencies..."
-DEPS=("bc" "curl" "grep" "awk" "sed")
+DEPS=("bc" "curl" "grep" "awk" "sed" "wget" "unzip" "net-tools" "sysstat" "cpulimit")
 MISSING=()
 
 for dep in "${DEPS[@]}"; do
@@ -53,14 +70,28 @@ done
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo "Installing missing dependencies: ${MISSING[*]}"
     if command -v apt-get &> /dev/null; then
-        apt-get update
         apt-get install -y ${MISSING[@]}
     elif command -v yum &> /dev/null; then
         yum install -y ${MISSING[@]}
+    elif command -v dnf &> /dev/null; then
+        dnf install -y ${MISSING[@]}
     else
         echo "Warning: Could not install missing dependencies. Please install them manually."
     fi
 fi
+
+# Install additional useful packages for server optimization
+echo "Installing additional optimization packages..."
+ADDITIONAL_PACKAGES=("htop" "iotop" "nethogs" "iftop" "nload" "speedtest-cli" "stress" "sysbench")
+for pkg in "${ADDITIONAL_PACKAGES[@]}"; do
+    if command -v apt-get &> /dev/null; then
+        apt-get install -y $pkg 2>/dev/null || echo "Package $pkg not available in apt repositories"
+    elif command -v yum &> /dev/null; then
+        yum install -y $pkg 2>/dev/null || echo "Package $pkg not available in yum repositories"
+    elif command -v dnf &> /dev/null; then
+        dnf install -y $pkg 2>/dev/null || echo "Package $pkg not available in dnf repositories"
+    fi
+done
 
 echo "Installation complete!"
 echo "You can now run the optimization script with: sudo optiz"
