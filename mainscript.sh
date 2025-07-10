@@ -243,7 +243,7 @@ This is recommended for optimizing network throughput."
                 cat > /etc/sysctl.d/99-bbr.conf << EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
-EOF 
+EOF
                 success_msg "BBR configured"
                 ;;
             2)
@@ -437,89 +437,44 @@ show_description_and_confirm() {
     [[ "$confirm" =~ ^([yY][eE][sS]|[yY])$ ]]
 }
 
-# Function to get system summary
-get_system_summary() {
-    # System basic info
+show_system_summary() {
+    local width=60
     local hostname=$(hostname)
-    local os_info=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2 2>/dev/null || echo "Unknown OS")
+    local os=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)
     local kernel=$(uname -r)
-    local uptime=$(uptime -p 2>/dev/null || echo "Unknown")
+    local uptime=$(uptime -p)
+    local cpu_model=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | sed 's/^ *//')
+    local cpu_cores=$(nproc)
+    local ram=$(free -h | awk '/Mem:/ {print $2}')
+    local disk=$(df -h / | awk 'NR==2{print $3 "/" $2 " (" $5 ")"}')
+    local ipv4=$(hostname -I | awk '{print $1}')
+    local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
+    local net_status
+    if ping -c1 -W1 1.1.1.1 &>/dev/null; then
+        net_status="${GREEN}Online${NC}"
+    else
+        net_status="${RED}Offline${NC}"
+    fi
     
-    # CPU info
-    local cpu_model=$(lscpu | grep "Model name" | cut -d':' -f2- | sed 's/^[ \t]*//' 2>/dev/null || echo "Unknown CPU")
-    local cpu_cores=$(nproc 2>/dev/null || echo "Unknown")
-    local cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d. -f1 2>/dev/null || echo "0")
-    
-    # Memory info
-    local total_mem=$(free -h | grep Mem | awk '{print $2}' 2>/dev/null || echo "Unknown")
-    local used_mem=$(free -h | grep Mem | awk '{print $3}' 2>/dev/null || echo "Unknown")
-    local mem_percent=$(free | grep Mem | awk '{print int($3/$2 * 100)}' 2>/dev/null || echo "0")
-    
-    # Disk info
-    local disk_usage=$(df -h / | tail -n1 | awk '{print $5}' 2>/dev/null || echo "0%")
-    local total_disk=$(df -h / | tail -n1 | awk '{print $2}' 2>/dev/null || echo "Unknown")
-    
-    # Network info
-    local ipv4=$(ip route get 1.1.1.1 | awk '{print $7}' | head -n1 2>/dev/null || echo "N/A")
-    local ipv6=$(ip -6 addr show | grep inet6 | grep global | awk '{print $2}' | cut -d'/' -f1 | head -n1 2>/dev/null || echo "N/A")
-    local public_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "N/A")
-    
-    # Load average
-    local load_avg=$(uptime | awk -F'load average:' '{print $2}' | sed 's/,//g' 2>/dev/null || echo "N/A")
-    
-    return 0
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    echo -e "${CYAN}║${NC}         ${YELLOW}SYSTEM SUMMARY${NC}                                      ${CYAN}║${NC}"
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    printf "${GREEN} Hostname:${NC} %-20s  ${GREEN}OS:${NC} %s\n" "$hostname" "$os"
+    printf "${GREEN} Kernel:${NC} %-21s  ${GREEN}Uptime:${NC} %s\n" "$kernel" "$uptime"
+    printf "${GREEN} CPU:${NC} %-24s  ${GREEN}Cores:${NC} %s\n" "$cpu_model" "$cpu_cores"
+    printf "${GREEN} RAM:${NC} %-25s  ${GREEN}Disk:${NC} %s\n" "$ram" "$disk"
+    printf "${GREEN} IPv4:${NC} %-23s  ${GREEN}IPv6:${NC} %s\n" "${ipv4:-N/A}" "${ipv6:-N/A}"
+    printf "${GREEN} Network:${NC} %s\n" "$net_status"
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}\n"
 }
 
-# Update show_main_menu with system summary
 show_main_menu() {
-    local width=80
-    
-    # Get system summary
-    get_system_summary
-    
-    # System basic info
-    local hostname=$(hostname)
-    local os_info=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2 2>/dev/null || echo "Unknown OS")
-    local kernel=$(uname -r)
-    local uptime=$(uptime -p 2>/dev/null || echo "Unknown")
-    
-    # CPU info
-    local cpu_model=$(lscpu | grep "Model name" | cut -d':' -f2- | sed 's/^[ \t]*//' 2>/dev/null || echo "Unknown CPU")
-    local cpu_cores=$(nproc 2>/dev/null || echo "Unknown")
-    local cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d. -f1 2>/dev/null || echo "0")
-    
-    # Memory info
-    local total_mem=$(free -h | grep Mem | awk '{print $2}' 2>/dev/null || echo "Unknown")
-    local used_mem=$(free -h | grep Mem | awk '{print $3}' 2>/dev/null || echo "Unknown")
-    local mem_percent=$(free | grep Mem | awk '{print int($3/$2 * 100)}' 2>/dev/null || echo "0")
-    
-    # Disk info
-    local disk_usage=$(df -h / | tail -n1 | awk '{print $5}' 2>/dev/null || echo "0%")
-    local total_disk=$(df -h / | tail -n1 | awk '{print $2}' 2>/dev/null || echo "Unknown")
-    
-    # Network info
-    local ipv4=$(ip route get 1.1.1.1 | awk '{print $7}' | head -n1 2>/dev/null || echo "N/A")
-    local ipv6=$(ip -6 addr show | grep inet6 | grep global | awk '{print $2}' | cut -d'/' -f1 | head -n1 2>/dev/null || echo "N/A")
-    local public_ip=$(curl -s --max-time 3 https://ipinfo.io/ip 2>/dev/null || echo "N/A")
-    
-    # Load average
-    local load_avg=$(uptime | awk -F'load average:' '{print $2}' | sed 's/,//g' 2>/dev/null || echo "N/A")
-    
+    local width=60
+    show_system_summary
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -e "${CYAN}║${NC}                    ${GREEN}SNARE OPTIZ MENU${NC}                        ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                     ${GREEN}SNARE OPTIZ MENU${NC}                      ${CYAN}║${NC}"
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
     echo
-    echo -e "${YELLOW}📊 SYSTEM SUMMARY:${NC}"
-    echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}Hostname:${NC} $hostname ${CYAN}│${NC} ${GREEN}OS:${NC} $os_info ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}Kernel:${NC} $kernel ${CYAN}│${NC} ${GREEN}Uptime:${NC} $uptime ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}CPU:${NC} $cpu_model ${CYAN}│${NC} ${GREEN}Cores:${NC} $cpu_cores ${CYAN}│${NC} ${GREEN}Usage:${NC} ${cpu_usage}% ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}Memory:${NC} $used_mem/$total_mem (${mem_percent}%) ${CYAN}│${NC} ${GREEN}Disk:${NC} $disk_usage ($total_disk) ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}IPv4:${NC} $ipv4 ${CYAN}│${NC} ${GREEN}IPv6:${NC} $ipv6 ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}Public IP:${NC} $public_ip ${CYAN}│${NC} ${GREEN}Load:${NC} $load_avg ${CYAN}│${NC}"
-    echo -e "${CYAN}└─────────────────────────────────────────────────────────────────────────────────┘${NC}"
-    echo
-    echo -e "${YELLOW}🔧 OPTIMIZATION OPTIONS:${NC}"
     echo -e "${GREEN}1.${NC} Run full optimization (recommended) ${YELLOW}[XanMod not included]${NC}"
     echo -e "${GREEN}2.${NC} Optimize CPU settings only"
     echo -e "${GREEN}3.${NC} Optimize memory settings only"
