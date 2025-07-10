@@ -1316,7 +1316,7 @@ run_diagnostics() {
     
     echo -e "${CYAN}Health Score: ${health_score}/${total_checks} checks passed${NC}"
 
-    
+     
     
     # Auto-recommendations based on health score
     if [[ $health_percentage -lt 80 ]]; then
