@@ -1272,6 +1272,7 @@ check_critical_services() {
 }
 
 run_diagnostics() {
+    clear
     section_header "SYSTEM DIAGNOSTICS"
     echo -e "${YELLOW}Running comprehensive system checks...${NC}"
     
@@ -1298,8 +1299,6 @@ run_diagnostics() {
     # Service Checks
     echo -e "\n${GREEN}[5/5] Validating System Services...${NC}"
     check_critical_services
-    
-    
     
     # Auto-run diagnostics when entering this section
     echo -e "\n${CYAN}=== AUTO-DIAGNOSTICS RESULTS ===${NC}"
@@ -1380,7 +1379,7 @@ run_diagnostics() {
     fi
     
     echo -e "${CYAN}Health Score: ${health_score}/${total_checks} checks passed${NC}"
-
+    
     generate_optimization_recommendations
     
     # Auto-recommendations based on health score
