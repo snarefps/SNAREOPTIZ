@@ -100,13 +100,19 @@ show_welcome_banner() {
     local ipv4=$(hostname -I | awk '{print $1}')
     local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
     local uptime=$(uptime -p)
+    # Box width
+    local box_width=90
+    local hline="$(printf '═%.0s' $(seq 1 $box_width))"
     # Print summary box
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-    printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-15s  ${CYAN}OS:${NC} %-20s  ${CYAN}Kernel:${NC} %-12s ${GREEN}║\n" "$hostname" "$os" "$kernel"
-    printf "${GREEN}║${NC}  ${CYAN}CPU:${NC} %-30s  ${CYAN}Cores:${NC} %-3s  ${CYAN}RAM:${NC} %-8s ${GREEN}║\n" "$cpu" "$cpu_cores" "$ram"
-    printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-8s free / %-8s total   ${CYAN}Uptime:${NC} %-18s ${GREEN}║\n" "$disk_free" "$disk_total" "$uptime"
-    printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} %-39s ${CYAN}IPv6:${NC} %-30s${GREEN}║\n" "$ipv4" "${ipv6:-N/A}"
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}╔${hline}╗${NC}"
+    printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-18s ${CYAN}OS:${NC} %-25s ${CYAN}Kernel:${NC} %-18s ${GREEN}║\n" "$hostname" "$os" "$kernel"
+    printf "${GREEN}║${NC}  ${CYAN}CPU:${NC} %-38s ${CYAN}Cores:${NC} %-3s ${CYAN}RAM:${NC} %-8s ${GREEN}║\n" "$cpu" "$cpu_cores" "$ram"
+    printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-8s free / %-8s total   ${CYAN}Uptime:${NC} %-25s ${GREEN}║\n" "$disk_free" "$disk_total" "$uptime"
+    # Color only the IP values
+    local ipv4_colored="${RED}$ipv4${NC}"
+    local ipv6_colored="${CYAN}${ipv6:-N/A}${NC}"
+    printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} %-39s ${CYAN}IPv6:${NC} %-30s${GREEN}║\n" "$ipv4_colored" "$ipv6_colored"
+    echo -e "${GREEN}╚${hline}╝${NC}"
     echo
     # Show loading animation
     echo -ne "${CYAN}Initializing SNARE OPTIZ"
@@ -1310,7 +1316,7 @@ run_diagnostics() {
     
     echo -e "${CYAN}Health Score: ${health_score}/${total_checks} checks passed${NC}"
 
-    generate_optimization_recommendations
+    
     
     # Auto-recommendations based on health score
     if [[ $health_percentage -lt 80 ]]; then
