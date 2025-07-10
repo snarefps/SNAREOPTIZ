@@ -23,7 +23,7 @@ if [ -f "server_optimizer.sh" ]; then
     echo "Copied to installation directory."
 else
     echo "Local file not found. Checking GitHub..."
-    if curl -s -f -o /opt/server-optimizer/server_optimizer.sh https://raw.githubusercontent.com/snarefps/SNARE-OPTIZ/main/server_optimizer.sh; then
+    if curl -s -f -o /opt/server-optimizer/server_optimizer.sh https://raw.githubusercontent.com/snarefps/SNAREOPTIZ/main/server_optimizer.sh; then
         echo "Download successful!"
     else
         echo "Error: Could not find server_optimizer.sh. Installation failed."
