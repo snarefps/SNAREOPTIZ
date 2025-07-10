@@ -18,13 +18,13 @@ show_progress() {
     local width=50
     local progress=0
     
-    echo -ne "${YELLOW}Progress: [${NC}"
+    echo -ne "${YELLOW}Progress: ${NC}${CYAN}[${NC}"
     while [ $progress -lt $width ]; do
-        echo -ne "${GREEN}#${NC}"
+        echo -ne "${YELLOW}⚡${NC}"
         progress=$((progress + 1))
         sleep $(echo "scale=3; $duration/$width" | bc)
     done
-    echo -e "${YELLOW}] Done!${NC}"
+    echo -e "${CYAN}]${NC} ${GREEN}Done!${NC}"
 }
 
 # Function to show animated dots
@@ -37,7 +37,7 @@ show_dots() {
     
     echo -ne "$message"
     while (( $(echo "$elapsed < $duration" | bc -l) )); do
-        echo -ne "."
+        echo -ne " ⚡"
         sleep $interval
         elapsed=$(echo "$elapsed + $interval" | bc)
     done
@@ -64,12 +64,12 @@ loading_bar() {
     local width=50
     local interval=$(echo "scale=3; $duration/$width" | bc)
     
-    echo -ne "${YELLOW}["
+    echo -ne "${CYAN}[${NC}"
     for ((i=0; i<$width; i++)); do
-        echo -ne "${GREEN}#"
+        echo -ne "${YELLOW}⚡${NC}"
         sleep $interval
     done
-    echo -e "${YELLOW}] ${GREEN}Done!${NC}"
+    echo -e "${CYAN}]${NC} ${GREEN}Done!${NC}"
 }
 
 show_welcome_banner() {
@@ -144,21 +144,20 @@ show_welcome_banner() {
 # Function to display section header
 section_header() {
     local title=$1
-    local cols=$(tput cols)
-    local title_len=${#title}
-    local padding=$(( (cols - title_len - 4) / 2 ))
-    
-    echo -e "\n${BLUE}$(printf '=%.0s' $(seq 1 $cols))${NC}"
-    echo -e "${BLUE}=$(printf ' %.0s' $(seq 1 $padding))${CYAN} $title ${BLUE}$(printf ' %.0s' $(seq 1 $padding))=${NC}"
-    echo -e "${BLUE}$(printf '=%.0s' $(seq 1 $cols))${NC}\n"
+    local width=70
+    echo
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}                      ${PURPLE}⚡ $title ⚡${NC}                           ${CYAN}│${NC}"
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
+    echo
 }
 
 # Function to display success message
 success_msg() {
-    echo -e "${GREEN}✓ $1${NC}"
+    echo -e "${GREEN}✓${NC} $1"
     echo -ne "${CYAN}Processing"
     for i in {1..3}; do
-        echo -ne "."
+        echo -ne " ⚡"
         sleep 0.1
     done
     echo -e "${NC}"
@@ -166,12 +165,12 @@ success_msg() {
 
 # Function to display error message
 error_msg() {
-    echo -e "${RED}✗ $1${NC}"
+    echo -e "${RED}✗${NC} $1"
 }
 
 # Function to display info message
 info_msg() {
-    echo -e "${YELLOW}ℹ $1${NC}"
+    echo -e "${YELLOW}ℹ${NC} $1"
 }
 
 # Must run as root
@@ -470,38 +469,66 @@ This is recommended to ensure correct date and time display."
 show_description_and_confirm() {
     local title=$1
     local description=$2
+    local width=70
     
-    section_header "$title"
-    echo -e "${YELLOW}Description:${NC}"
-    echo -e "$description"
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}                      ${PURPLE}⚡ $title ⚡${NC}                           ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}Description:${NC}                                                      ${CYAN}│${NC}"
+    
+    # Word wrap the description
+    local words=($description)
+    local line=""
+    for word in "${words[@]}"; do
+        if [ ${#line} -gt 0 ]; then
+            if [ $((${#line} + ${#word} + 1)) -lt 65 ]; then
+                line="$line $word"
+            else
+                echo -e "${CYAN}│${NC} $line$(printf '%*s' $((65 - ${#line})) '')${CYAN}│${NC}"
+                line="$word"
+            fi
+        else
+            line="$word"
+        fi
+    done
+    if [ ${#line} -gt 0 ]; then
+        echo -e "${CYAN}│${NC} $line$(printf '%*s' $((65 - ${#line})) '')${CYAN}│${NC}"
+    fi
+    
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -ne "${CYAN}│${NC} ${GREEN}Proceed with this optimization? [y/n]:${NC} "
+    read -n 1 -r confirm
     echo
-    read -p "Do you want to proceed with this optimization? (y/n): " confirm
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
     [[ "$confirm" =~ ^([yY][eE][sS]|[yY])$ ]]
 }
 
-# Update show_main_menu with animated border
+# Update show_main_menu with new style
 show_main_menu() {
-    local width=60
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -e "${CYAN}║${NC}                     ${GREEN}SNARE OPTIZ MENU${NC}                      ${CYAN}║${NC}"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    local width=70
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}                    ${PURPLE}⚡ SNARE OPTIZ MAIN MENU ⚡${NC}                      ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[1]${NC} 🚀 Run Full Optimization ${YELLOW}[Recommended]${NC}                         ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[2]${NC} 💻 Optimize CPU Settings                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[3]${NC} 🎮 Optimize Memory Settings                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[4]${NC} 🌐 Optimize Network Settings                                   ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[5]${NC} 🔒 Optimize SSH Settings                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[6]${NC} ⚡ Setup Anti-throttling                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[7]${NC} 🔍 Optimize DNS Settings                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[8]${NC} 🖥️  Install XanMod Kernel ${YELLOW}[Separate Installation]${NC}             ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[9]${NC} 📊 Configure BBR Options                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[10]${NC} 🕒 Set System Timezone                                        ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[11]${NC} 📈 Show Current System Status                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[12]${NC} ⚙️  Advanced Options ${PURPLE}[NEW!]${NC}                                   ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}  ${RED}[13]${NC} 🚪 Exit                                                         ${CYAN}│${NC}"
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
     echo
-    echo -e "${GREEN}1.${NC} Run full optimization (recommended) ${YELLOW}[XanMod not included]${NC}"
-    echo -e "${GREEN}2.${NC} Optimize CPU settings only"
-    echo -e "${GREEN}3.${NC} Optimize memory settings only"
-    echo -e "${GREEN}4.${NC} Optimize network settings only"
-    echo -e "${GREEN}5.${NC} Optimize SSH settings only"
-    echo -e "${GREEN}6.${NC} Setup anti-throttling measures only"
-    echo -e "${GREEN}7.${NC} Optimize DNS settings"
-    echo -e "${GREEN}8.${NC} Install XanMod kernel ${CYAN}[Separate Installation]${NC}"
-    echo -e "${GREEN}9.${NC} Configure BBR options"
-    echo -e "${GREEN}10.${NC} Set system timezone"
-    echo -e "${GREEN}11.${NC} Show current system status"
-    echo -e "${GREEN}12.${NC} Advanced Options ${PURPLE}[NEW!]${NC}"
-    echo -e "${GREEN}13.${NC} Exit"
-    echo
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -n "Enter your choice [1-13]: "
+    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[1-13]${NC}: "
 }
 
 # Function to optimize CPU
@@ -1520,27 +1547,29 @@ generate_optimization_recommendations() {
 
 # Update main menu to include new advanced options
 show_main_menu() {
-    local width=60
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -e "${CYAN}║${NC}                     ${GREEN}SNARE OPTIZ MENU${NC}                      ${CYAN}║${NC}"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    local width=70
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}                    ${PURPLE}⚡ SNARE OPTIZ MAIN MENU ⚡${NC}                      ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[1]${NC} 🚀 Run Full Optimization ${YELLOW}[Recommended]${NC}                         ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[2]${NC} 💻 Optimize CPU Settings                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[3]${NC} 🎮 Optimize Memory Settings                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[4]${NC} 🌐 Optimize Network Settings                                   ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[5]${NC} 🔒 Optimize SSH Settings                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[6]${NC} ⚡ Setup Anti-throttling                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[7]${NC} 🔍 Optimize DNS Settings                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[8]${NC} 🖥️  Install XanMod Kernel ${YELLOW}[Separate Installation]${NC}             ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[9]${NC} 📊 Configure BBR Options                                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[10]${NC} 🕒 Set System Timezone                                        ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[11]${NC} 📈 Show Current System Status                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[12]${NC} ⚙️  Advanced Options ${PURPLE}[NEW!]${NC}                                   ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC}  ${RED}[13]${NC} 🚪 Exit                                                         ${CYAN}│${NC}"
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
     echo
-    echo -e "${GREEN}1.${NC} Run full optimization (recommended) ${YELLOW}[XanMod not included]${NC}"
-    echo -e "${GREEN}2.${NC} Optimize CPU settings only"
-    echo -e "${GREEN}3.${NC} Optimize memory settings only"
-    echo -e "${GREEN}4.${NC} Optimize network settings only"
-    echo -e "${GREEN}5.${NC} Optimize SSH settings only"
-    echo -e "${GREEN}6.${NC} Setup anti-throttling measures only"
-    echo -e "${GREEN}7.${NC} Optimize DNS settings"
-    echo -e "${GREEN}8.${NC} Install XanMod kernel ${CYAN}[Separate Installation]${NC}"
-    echo -e "${GREEN}9.${NC} Configure BBR options"
-    echo -e "${GREEN}10.${NC} Set system timezone"
-    echo -e "${GREEN}11.${NC} Show current system status"
-    echo -e "${GREEN}12.${NC} Advanced Options ${PURPLE}[NEW!]${NC}"
-    echo -e "${GREEN}13.${NC} Exit"
-    echo
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -n "Enter your choice [1-13]: "
+    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[1-13]${NC}: "
 }
 
 # Update main program loop
