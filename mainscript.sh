@@ -185,7 +185,7 @@ EOF
         success_msg "Added Cloudflare and Google DNS servers"
 
         # Optimize systemd-resolved if available
-        if systemctl is-active systemd-resolved >/dev/null 2>&1; then
+        if is_systemd_available && systemctl is-active systemd-resolved >/dev/null 2>&1; then
             cat > /etc/systemd/resolved.conf << EOF
 [Resolve]
 DNS=1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4
@@ -835,7 +835,7 @@ show_system_status() {
     echo -e "\n${CYAN}DNS Settings:${NC}"
     echo "Current DNS Servers:"
     cat /etc/resolv.conf | grep nameserver
-    if systemctl is-active systemd-resolved >/dev/null 2>&1; then
+    if is_systemd_available && systemctl is-active systemd-resolved >/dev/null 2>&1; then
         echo "systemd-resolved status: Active"
         resolvectl status | grep "DNS Servers" || true
     fi
@@ -846,7 +846,15 @@ show_system_status() {
     
     # Anti-throttle Status
     echo -e "\n${CYAN}Anti-Throttle Service:${NC}"
-    systemctl status anti-throttle.service --no-pager | head -n 3
+    if is_systemd_available; then
+        systemctl status anti-throttle.service --no-pager | head -n 3
+    else
+        if pgrep -f "anti-throttle.sh" >/dev/null 2>&1; then
+            echo "Anti-throttle service is running"
+        else
+            echo "Anti-throttle service is not running"
+        fi
+    fi
     
     # XanMod Kernel Check
     echo -e "\n${CYAN}XanMod Kernel Status:${NC}"
@@ -860,7 +868,7 @@ show_system_status() {
     
     # Timezone Information
     echo -e "\n${CYAN}Timezone Settings:${NC}"
-    timedatectl | grep "Time zone"
+    timedatectl | grep "Time zone" || date +"%Z %z"
     
     # Performance Metrics
     echo -e "\n${CYAN}Current Performance Metrics:${NC}"
@@ -1261,14 +1269,25 @@ check_filesystem_status() {
 }
 
 check_critical_services() {
-    local services=("sshd" "systemd" "cron")
+    local services=("sshd" "cron")
     for service in "${services[@]}"; do
-        if systemctl is-active --quiet $service 2>/dev/null; then
+        if command -v systemctl &>/dev/null && systemctl is-active --quiet $service 2>/dev/null; then
+            echo -e "${GREEN}✓ $service is running${NC}"
+        elif pgrep -f "$service" >/dev/null 2>&1; then
             echo -e "${GREEN}✓ $service is running${NC}"
         else
             echo -e "${RED}⚠ $service is not running${NC}"
         fi
     done
+}
+
+# Function to check if systemd is available
+is_systemd_available() {
+    if command -v systemctl &>/dev/null && pidof systemd >/dev/null 2>&1; then
+        return 0  # systemd is available
+    else
+        return 1  # systemd is not available
+    fi
 }
 
 run_diagnostics() {
@@ -1349,9 +1368,9 @@ run_diagnostics() {
     
     # Service Health Check
     local service_issues=0
-    local critical_services=("sshd" "systemd" "cron")
+    local critical_services=("sshd" "cron")
     for service in "${critical_services[@]}"; do
-        if ! systemctl is-active --quiet $service 2>/dev/null; then
+        if ! command -v systemctl &>/dev/null || ! systemctl is-active --quiet $service 2>/dev/null; then
             ((service_issues++))
         fi
     done
