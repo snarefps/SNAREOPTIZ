@@ -1209,6 +1209,106 @@ run_diagnostics() {
     check_critical_services
     
     generate_optimization_recommendations
+    
+    # Auto-run diagnostics when entering this section
+    echo -e "\n${CYAN}=== AUTO-DIAGNOSTICS RESULTS ===${NC}"
+    echo -e "${YELLOW}Running automatic system health check...${NC}"
+    
+    # Quick health check
+    local health_score=0
+    local total_checks=0
+    
+    # CPU Health Check
+    if [[ $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null) == "performance" ]]; then
+        echo -e "${GREEN}✓ CPU Governor: Optimal${NC}"
+        ((health_score++))
+    else
+        echo -e "${RED}✗ CPU Governor: Needs optimization${NC}"
+    fi
+    ((total_checks++))
+    
+    # Memory Health Check
+    local memory_usage=$(free | grep Mem | awk '{print int($3/$2 * 100)}')
+    if [[ $memory_usage -lt 80 ]]; then
+        echo -e "${GREEN}✓ Memory Usage: ${memory_usage}% (Good)${NC}"
+        ((health_score++))
+    else
+        echo -e "${RED}✗ Memory Usage: ${memory_usage}% (High)${NC}"
+    fi
+    ((total_checks++))
+    
+    # Network Health Check
+    local backlog=$(sysctl -n net.ipv4.tcp_max_syn_backlog)
+    if [[ $backlog -ge 2048 ]]; then
+        echo -e "${GREEN}✓ Network Backlog: ${backlog} (Good)${NC}"
+        ((health_score++))
+    else
+        echo -e "${RED}✗ Network Backlog: ${backlog} (Low)${NC}"
+    fi
+    ((total_checks++))
+    
+    # Disk Health Check
+    local disk_usage=$(df -h / | tail -n1 | awk '{print $5}' | sed 's/%//')
+    if [[ $disk_usage -lt 80 ]]; then
+        echo -e "${GREEN}✓ Disk Usage: ${disk_usage}% (Good)${NC}"
+        ((health_score++))
+    else
+        echo -e "${RED}✗ Disk Usage: ${disk_usage}% (High)${NC}"
+    fi
+    ((total_checks++))
+    
+    # Service Health Check
+    local service_issues=0
+    local critical_services=("sshd" "systemd" "cron")
+    for service in "${critical_services[@]}"; do
+        if ! systemctl is-active --quiet $service 2>/dev/null; then
+            ((service_issues++))
+        fi
+    done
+    
+    if [[ $service_issues -eq 0 ]]; then
+        echo -e "${GREEN}✓ Critical Services: All running${NC}"
+        ((health_score++))
+    else
+        echo -e "${RED}✗ Critical Services: ${service_issues} issues detected${NC}"
+    fi
+    ((total_checks++))
+    
+    # Calculate and display health score
+    local health_percentage=$((health_score * 100 / total_checks))
+    echo -e "\n${CYAN}=== SYSTEM HEALTH SCORE ===${NC}"
+    
+    if [[ $health_percentage -ge 80 ]]; then
+        echo -e "${GREEN}🏆 System Health: ${health_percentage}% (EXCELLENT)${NC}"
+    elif [[ $health_percentage -ge 60 ]]; then
+        echo -e "${YELLOW}⚠️  System Health: ${health_percentage}% (GOOD)${NC}"
+    elif [[ $health_percentage -ge 40 ]]; then
+        echo -e "${YELLOW}⚠️  System Health: ${health_percentage}% (FAIR)${NC}"
+    else
+        echo -e "${RED}🚨 System Health: ${health_percentage}% (POOR)${NC}"
+    fi
+    
+    echo -e "${CYAN}Health Score: ${health_score}/${total_checks} checks passed${NC}"
+    
+    # Auto-recommendations based on health score
+    if [[ $health_percentage -lt 80 ]]; then
+        echo -e "\n${YELLOW}💡 Auto-Recommendations:${NC}"
+        if [[ $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null) != "performance" ]]; then
+            echo -e "   • Run CPU optimization (Option 2)"
+        fi
+        if [[ $memory_usage -gt 80 ]]; then
+            echo -e "   • Run Memory optimization (Option 3)"
+        fi
+        if [[ $backlog -lt 2048 ]]; then
+            echo -e "   • Run Network optimization (Option 4)"
+        fi
+        if [[ $disk_usage -gt 80 ]]; then
+            echo -e "   • Check disk space and clean unnecessary files"
+        fi
+        echo -e "   • Consider running full optimization (Option 1)"
+    else
+        echo -e "\n${GREEN}🎉 Your system is in excellent condition!${NC}"
+    fi
 }
 
 generate_optimization_recommendations() {
