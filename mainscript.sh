@@ -75,19 +75,30 @@ loading_bar() {
 show_welcome_banner() {
     clear
     echo -e "${CYAN}"
-    echo "   _____ _   _          _____  ______    ____  _____ _______ _____ ______"
-    echo "  / ____| \ | |   /\   |  __ \|  ____|  / __ \|  __ \__   __|_   _|___  /"
-    echo " | (___ |  \| |  /  \  | |__) | |__    | |  | | |__) | | |    | |    / / "
-    echo "  \\___ \| . \` | / /\\ \ |  _  /|  __|   | |  | |  ___/  | |    | |   / /  "
-    echo "  ____) | |\\  |/ ____ \\| | \\ \| |____  | |__| | |      | |   _| |_ / /__ "
-    echo " |_____/|_| \_/_/    \_\_|  \_\______|  \____/|_|      |_|  |_____/_____|"
+    echo "    ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡"
+    echo "    ⚡                                                          ⚡"
+    echo -e "    ⚡        ${PURPLE}███████╗███╗   ██╗ █████╗ ██████╗ ███████╗${CYAN}        ⚡"
+    echo -e "    ⚡        ${PURPLE}██╔════╝████╗  ██║██╔══██╗██╔══██╗██╔════╝${CYAN}        ⚡"
+    echo -e "    ⚡        ${PURPLE}███████╗██╔██╗ ██║███████║██████╔╝█████╗${CYAN}          ⚡"
+    echo -e "    ⚡        ${PURPLE}╚════██║██║╚██╗██║██╔══██║██╔══██╗██╔══╝${CYAN}          ⚡"
+    echo -e "    ⚡        ${PURPLE}███████║██║ ╚████║██║  ██║██║  ██║███████╗${CYAN}        ⚡"
+    echo -e "    ⚡        ${PURPLE}╚══════╝╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝${CYAN}        ⚡"
+    echo "    ⚡                                                          ⚡"
+    echo -e "    ⚡        ${GREEN}██████╗ ██████╗ ████████╗██╗███████╗${CYAN}              ⚡"
+    echo -e "    ⚡        ${GREEN}██╔══██╗██╔══██╗╚══██╔══╝██║╚══███╔╝${CYAN}              ⚡"
+    echo -e "    ⚡        ${GREEN}██║  ██║██████╔╝   ██║   ██║  ███╔╝${CYAN}               ⚡"
+    echo -e "    ⚡        ${GREEN}██║  ██║██╔═══╝    ██║   ██║ ███╔╝${CYAN}                ⚡"
+    echo -e "    ⚡        ${GREEN}██████╔╝██║        ██║   ██║███████╗${CYAN}              ⚡"
+    echo -e "    ⚡        ${GREEN}╚═════╝ ╚═╝        ╚═╝   ╚═╝╚══════╝${CYAN}              ⚡"
+    echo "    ⚡                                                          ⚡"
+    echo "    ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡ ⚡"
     echo -e "${NC}"
-    echo -e "${YELLOW}Advanced Linux Server Optimization Tool${NC}"
-    echo -e "${PURPLE}Version 2.0 - By SNAREFPS${NC}"
-    echo -e "${RED}Note: XanMod kernel installation is not included in full optimization${NC}"
-    echo -e "${BLUE}----------------------------------------${NC}"
+    echo -e "           ${YELLOW}🚀 Advanced Linux Server Optimization Tool${NC}"
+    echo -e "           ${PURPLE}Version 2.0 - Powered by SNAREFPS${NC}"
+    echo -e "           ${RED}Note: XanMod kernel requires separate installation${NC}"
     echo
-    # --- System Summary Section ---
+    echo -e "${BLUE}╭───────────────────── System Summary ─────────────────────╮${NC}"
+    
     # Gather system info
     local hostname=$(hostname)
     local os=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)
@@ -99,25 +110,34 @@ show_welcome_banner() {
     local ipv4=$(hostname -I | awk '{print $1}')
     local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
     local uptime=$(uptime -p)
-    # Print summary box (columnar)
-echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
 
-printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-22s ${CYAN}CPU:${NC} %-30s ${GREEN}║${NC}\n" "$hostname" "$cpu"
-printf "${GREEN}║${NC}  ${CYAN}OS:${NC} %-24s ${CYAN}Cores:${NC} %-3s ${CYAN}RAM:${NC} %-10s ${GREEN}║${NC}\n" "$os" "$cpu_cores" "$ram"
-printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-10s free / %-10s total ${CYAN}Uptime:${NC} %-18s ${GREEN}║${NC}\n" "$disk_free" "$disk_total" "$uptime"
-printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} ${RED}%-39s${NC} ${CYAN}IPv6:${NC} %-30s${GREEN}║${NC}\n" "$ipv4" "${ipv6:-N/A}"
-
-echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
-
+    # Print summary with icons and better formatting
+    echo -e "${CYAN}│${NC}  🖥️  ${GREEN}Host:${NC} $hostname"
+    echo -e "${CYAN}│${NC}  🐧 ${GREEN}OS:${NC} $os"
+    echo -e "${CYAN}│${NC}  💻 ${GREEN}CPU:${NC} $cpu ($cpu_cores cores)"
+    echo -e "${CYAN}│${NC}  🎮 ${GREEN}RAM:${NC} $ram"
+    echo -e "${CYAN}│${NC}  💾 ${GREEN}Disk:${NC} $disk_free free of $disk_total"
+    echo -e "${CYAN}│${NC}  🌐 ${GREEN}IPv4:${NC} ${RED}$ipv4${NC}"
+    echo -e "${CYAN}│${NC}  🔗 ${GREEN}IPv6:${NC} ${ipv6:-N/A}"
+    echo -e "${CYAN}│${NC}  ⏰ ${GREEN}Uptime:${NC} $uptime"
+    echo -e "${BLUE}╰──────────────────────────────────────────────────────────╯${NC}"
     echo
+
     # Show loading animation
-    echo -ne "${CYAN}Initializing SNARE OPTIZ"
+    echo -ne "${CYAN}⚡ Initializing SNARE OPTIZ"
     for i in {1..5}; do
-        echo -ne "."
+        echo -ne "${YELLOW}⚡${NC}"
         sleep 0.2
     done
-    echo -e "${NC}"
-    loading_bar 2
+    echo
+    
+    # Show progress bar with lightning effect
+    echo -ne "${CYAN}["
+    for i in {1..50}; do
+        echo -ne "${YELLOW}⚡${NC}"
+        sleep 0.02
+    done
+    echo -e "${CYAN}]${NC}"
     echo
 }
 
