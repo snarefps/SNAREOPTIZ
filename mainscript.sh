@@ -91,7 +91,6 @@ show_welcome_banner() {
     # Gather system info
     local hostname=$(hostname)
     local os=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)
-    local kernel=$(uname -r)
     local cpu=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | sed 's/^ *//')
     local cpu_cores=$(nproc)
     local ram=$(free -h | awk '/^Mem:/ {print $2}')
@@ -100,19 +99,13 @@ show_welcome_banner() {
     local ipv4=$(hostname -I | awk '{print $1}')
     local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
     local uptime=$(uptime -p)
-    # Box width
-    local box_width=90
-    local hline="$(printf '═%.0s' $(seq 1 $box_width))"
-    # Print summary box
-    echo -e "${GREEN}╔${hline}╗${NC}"
-    printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-18s ${CYAN}OS:${NC} %-25s ${CYAN}Kernel:${NC} %-18s ${GREEN}║\n" "$hostname" "$os" "$kernel"
-    printf "${GREEN}║${NC}  ${CYAN}CPU:${NC} %-38s ${CYAN}Cores:${NC} %-3s ${CYAN}RAM:${NC} %-8s ${GREEN}║\n" "$cpu" "$cpu_cores" "$ram"
-    printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-8s free / %-8s total   ${CYAN}Uptime:${NC} %-25s ${GREEN}║\n" "$disk_free" "$disk_total" "$uptime"
-    # Color only the IP values
-    local ipv4_colored="${RED}$ipv4${NC}"
-    local ipv6_colored="${CYAN}${ipv6:-N/A}${NC}"
-    printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} %-39s ${CYAN}IPv6:${NC} %-30s${GREEN}║\n" "$ipv4_colored" "$ipv6_colored"
-    echo -e "${GREEN}╚${hline}╝${NC}"
+    # Print summary box (columnar)
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+    printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-22s ${CYAN}CPU:${NC} %-30s ${GREEN}║\n" "$hostname" "$cpu"
+    printf "${GREEN}║${NC}  ${CYAN}OS:${NC} %-24s ${CYAN}Cores:${NC} %-3s ${CYAN}RAM:${NC} %-10s ${GREEN}║\n" "$os" "$cpu_cores" "$ram"
+    printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-10s free / %-10s total ${CYAN}Uptime:${NC} %-18s ${GREEN}║\n" "$disk_free" "$disk_total" "$uptime"
+    printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} ${RED}%-39s${NC} ${CYAN}IPv6:${NC} %-30s${GREEN}║\n" "$ipv4" "${ipv6:-N/A}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
     echo
     # Show loading animation
     echo -ne "${CYAN}Initializing SNARE OPTIZ"
@@ -1316,7 +1309,7 @@ run_diagnostics() {
     
     echo -e "${CYAN}Health Score: ${health_score}/${total_checks} checks passed${NC}"
 
-    
+    generate_optimization_recommendations
     
     # Auto-recommendations based on health score
     if [[ $health_percentage -lt 80 ]]; then
