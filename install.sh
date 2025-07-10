@@ -65,11 +65,3 @@ fi
 echo "Installation complete!"
 echo "You can now run the optimization script with: sudo server-optimizer"
 echo "Or from its location: sudo /opt/server-optimizer/server_optimizer.sh"
-echo ""
-echo "Would you like to run the optimization script now? (y/n)"
-read -r response
-if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
-    /opt/server-optimizer/server_optimizer.sh
-else
-    echo "You can run the script later using the commands above."
-fi 
