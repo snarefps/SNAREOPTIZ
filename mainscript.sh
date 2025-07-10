@@ -78,8 +78,8 @@ show_welcome_banner() {
     echo "   _____ _   _          _____  ______    ____  _____ _______ _____ ______"
     echo "  / ____| \ | |   /\   |  __ \|  ____|  / __ \|  __ \__   __|_   _|___  /"
     echo " | (___ |  \| |  /  \  | |__) | |__    | |  | | |__) | | |    | |    / / "
-    echo "  \___ \| . \` | / /\ \ |  _  /|  __|   | |  | |  ___/  | |    | |   / /  "
-    echo "  ____) | |\  |/ ____ \| | \ \| |____  | |__| | |      | |   _| |_ / /__ "
+    echo "  \\___ \| . \` | / /\\ \ |  _  /|  __|   | |  | |  ___/  | |    | |   / /  "
+    echo "  ____) | |\\  |/ ____ \\| | \\ \| |____  | |__| | |      | |   _| |_ / /__ "
     echo " |_____/|_| \_/_/    \_\_|  \_\______|  \____/|_|      |_|  |_____/_____|"
     echo -e "${NC}"
     echo -e "${YELLOW}Advanced Linux Server Optimization Tool${NC}"
@@ -87,38 +87,27 @@ show_welcome_banner() {
     echo -e "${RED}Note: XanMod kernel installation is not included in full optimization${NC}"
     echo -e "${BLUE}----------------------------------------${NC}"
     echo
-
-    show_system_summary() {
-    local width=60
+    # --- System Summary Section ---
+    # Gather system info
     local hostname=$(hostname)
-    local os=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)
+    local os=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)
     local kernel=$(uname -r)
-    local uptime=$(uptime -p)
-    local cpu_model=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | sed 's/^ *//')
+    local cpu=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | sed 's/^ *//')
     local cpu_cores=$(nproc)
-    local ram=$(free -h | awk '/Mem:/ {print $2}')
-    local disk=$(df -h / | awk 'NR==2{print $3 "/" $2 " (" $5 ")"}')
+    local ram=$(free -h | awk '/^Mem:/ {print $2}')
+    local disk_total=$(df -h / | awk 'END{print $2}')
+    local disk_free=$(df -h / | awk 'END{print $4}')
     local ipv4=$(hostname -I | awk '{print $1}')
     local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
-    local net_status
-    if ping -c1 -W1 1.1.1.1 &>/dev/null; then
-        net_status="${GREEN}Online${NC}"
-    else
-        net_status="${RED}Offline${NC}"
-    fi
-    
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -e "${CYAN}║${NC}         ${YELLOW}SYSTEM SUMMARY${NC}                                      ${CYAN}║${NC}"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    printf "${GREEN} Hostname:${NC} %-20s  ${GREEN}OS:${NC} %s\n" "$hostname" "$os"
-    printf "${GREEN} Kernel:${NC} %-21s  ${GREEN}Uptime:${NC} %s\n" "$kernel" "$uptime"
-    printf "${GREEN} CPU:${NC} %-24s  ${GREEN}Cores:${NC} %s\n" "$cpu_model" "$cpu_cores"
-    printf "${GREEN} RAM:${NC} %-25s  ${GREEN}Disk:${NC} %s\n" "$ram" "$disk"
-    printf "${GREEN} IPv4:${NC} %-23s  ${GREEN}IPv6:${NC} %s\n" "${ipv4:-N/A}" "${ipv6:-N/A}"
-    printf "${GREEN} Network:${NC} %s\n" "$net_status"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}\n"
-    }
-    
+    local uptime=$(uptime -p)
+    # Print summary box
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+    printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-15s  ${CYAN}OS:${NC} %-20s  ${CYAN}Kernel:${NC} %-12s ${GREEN}║\n" "$hostname" "$os" "$kernel"
+    printf "${GREEN}║${NC}  ${CYAN}CPU:${NC} %-30s  ${CYAN}Cores:${NC} %-3s  ${CYAN}RAM:${NC} %-8s ${GREEN}║\n" "$cpu" "$cpu_cores" "$ram"
+    printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-8s free / %-8s total   ${CYAN}Uptime:${NC} %-18s ${GREEN}║\n" "$disk_free" "$disk_total" "$uptime"
+    printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} %-39s ${CYAN}IPv6:${NC} %-30s${GREEN}║\n" "$ipv4" "${ipv6:-N/A}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+    echo
     # Show loading animation
     echo -ne "${CYAN}Initializing SNARE OPTIZ"
     for i in {1..5}; do
@@ -129,9 +118,6 @@ show_welcome_banner() {
     loading_bar 2
     echo
 }
-
-
-
 
 # Function to display section header
 section_header() {
@@ -471,10 +457,9 @@ show_description_and_confirm() {
     [[ "$confirm" =~ ^([yY][eE][sS]|[yY])$ ]]
 }
 
-
+# Update show_main_menu with animated border
 show_main_menu() {
     local width=60
-    show_system_summary
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
     echo -e "${CYAN}║${NC}                     ${GREEN}SNARE OPTIZ MENU${NC}                      ${CYAN}║${NC}"
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
@@ -1243,7 +1228,7 @@ run_diagnostics() {
     echo -e "\n${GREEN}[5/5] Validating System Services...${NC}"
     check_critical_services
     
-    generate_optimization_recommendations
+    
     
     # Auto-run diagnostics when entering this section
     echo -e "\n${CYAN}=== AUTO-DIAGNOSTICS RESULTS ===${NC}"
@@ -1324,6 +1309,8 @@ run_diagnostics() {
     fi
     
     echo -e "${CYAN}Health Score: ${health_score}/${total_checks} checks passed${NC}"
+
+    generate_optimization_recommendations
     
     # Auto-recommendations based on health score
     if [[ $health_percentage -lt 80 ]]; then
