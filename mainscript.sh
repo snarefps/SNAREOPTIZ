@@ -124,9 +124,9 @@ show_welcome_banner() {
     echo
 
     # Show loading animation
-    echo -ne "${CYAN}⚡ Initializing SNARE OPTIZ"
+    echo -ne "${CYAN}⚡ Initializing SNARE OPTIZ  "
     for i in {1..5}; do
-        echo -ne "${YELLOW}⚡${NC}"
+        echo -ne "${YELLOW} ⚡ ${NC}"
         sleep 0.2
     done
     echo
