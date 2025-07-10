@@ -305,30 +305,113 @@ This is recommended to ensure correct date and time display."
         echo "2. Europe/London (UK)"
         echo "3. America/New_York (US East)"
         echo "4. Asia/Dubai (UAE)"
-        echo "5. Custom timezone"
-        echo "6. Return to main menu"
+        echo "5. Europe/Berlin (Germany)"
+        echo "6. Europe/Paris (France)"
+        echo "7. Europe/Amsterdam (Netherlands)"
+        echo "8. Europe/Helsinki (Finland)"
+        echo "9. Custom timezone"
+        echo "10. Return to main menu"
         echo
-        read -p "Select timezone [1-6]: " tz_choice
+        read -p "Select timezone [1-10]: " tz_choice
 
         case $tz_choice in
             1) timedatectl set-timezone Asia/Tehran ;;
             2) timedatectl set-timezone Europe/London ;;
             3) timedatectl set-timezone America/New_York ;;
             4) timedatectl set-timezone Asia/Dubai ;;
-            5)
-                echo -e "\nAvailable timezones:"
-                timedatectl list-timezones
+            5) timedatectl set-timezone Europe/Berlin ;;
+            6) timedatectl set-timezone Europe/Paris ;;
+            7) timedatectl set-timezone Europe/Amsterdam ;;
+            8) timedatectl set-timezone Europe/Helsinki ;;
+            9)
+                # Interactive timezone selection
+                echo -e "\n${CYAN}Select timezone region:${NC}"
+                regions=($(timedatectl list-timezones | cut -d'/' -f1 | sort | uniq))
+                for i in "${!regions[@]}"; do
+                    echo "$((i+1)). ${regions[i]}"
+                done
                 echo
-                read -p "Enter timezone (e.g., Asia/Tehran): " custom_tz
-                if timedatectl list-timezones | grep -q "^$custom_tz$"; then
-                    timedatectl set-timezone "$custom_tz"
-                    success_msg "Timezone set to $custom_tz"
+                read -p "Enter region number: " region_num
+                
+                if [[ $region_num =~ ^[0-9]+$ ]] && [ $region_num -ge 1 ] && [ $region_num -le ${#regions[@]} ]; then
+                    selected_region=${regions[$((region_num-1))]}
+                    echo -e "\n${CYAN}Select city in ${selected_region}:${NC}"
+                    cities=($(timedatectl list-timezones | grep "^${selected_region}/" | cut -d'/' -f2- | sort))
+                    
+                    # Display cities with paging if there are many
+                    if [ ${#cities[@]} -gt 20 ]; then
+                        echo -e "${YELLOW}There are ${#cities[@]} cities. Showing in pages.${NC}"
+                        page=0
+                        page_size=20
+                        total_pages=$(( (${#cities[@]} + page_size - 1) / page_size ))
+                        
+                        while true; do
+                            start_idx=$((page * page_size))
+                            end_idx=$(( start_idx + page_size - 1 ))
+                            if [ $end_idx -ge ${#cities[@]} ]; then
+                                end_idx=$((${#cities[@]} - 1))
+                            fi
+                            
+                            echo -e "\n${CYAN}Page $((page+1))/$total_pages:${NC}"
+                            for i in $(seq $start_idx $end_idx); do
+                                echo "$((i+1)). ${cities[i]}"
+                            done
+                            
+                            echo -e "\n${YELLOW}[n]${NC} Next page, ${YELLOW}[p]${NC} Previous page, ${YELLOW}[s]${NC} Select city, ${YELLOW}[c]${NC} Cancel"
+                            read -p "Action: " page_action
+                            
+                            case $page_action in
+                                n|N) 
+                                    if [ $page -lt $((total_pages-1)) ]; then
+                                        page=$((page+1))
+                                    fi
+                                    ;;
+                                p|P)
+                                    if [ $page -gt 0 ]; then
+                                        page=$((page-1))
+                                    fi
+                                    ;;
+                                s|S)
+                                    read -p "Enter city number: " city_num
+                                    if [[ $city_num =~ ^[0-9]+$ ]] && [ $city_num -ge 1 ] && [ $city_num -le ${#cities[@]} ]; then
+                                        selected_city=${cities[$((city_num-1))]}
+                                        custom_tz="${selected_region}/${selected_city}"
+                                        timedatectl set-timezone "$custom_tz"
+                                        success_msg "Timezone set to $custom_tz"
+                                    else
+                                        error_msg "Invalid city number"
+                                    fi
+                                    break
+                                    ;;
+                                c|C)
+                                    return
+                                    ;;
+                            esac
+                        done
+                    else
+                        # If few cities, show them all at once
+                        for i in "${!cities[@]}"; do
+                            echo "$((i+1)). ${cities[i]}"
+                        done
+                        echo
+                        read -p "Enter city number: " city_num
+                        
+                        if [[ $city_num =~ ^[0-9]+$ ]] && [ $city_num -ge 1 ] && [ $city_num -le ${#cities[@]} ]; then
+                            selected_city=${cities[$((city_num-1))]}
+                            custom_tz="${selected_region}/${selected_city}"
+                            timedatectl set-timezone "$custom_tz"
+                            success_msg "Timezone set to $custom_tz"
+                        else
+                            error_msg "Invalid city number"
+                            return
+                        fi
+                    fi
                 else
-                    error_msg "Invalid timezone"
+                    error_msg "Invalid region number"
                     return
                 fi
                 ;;
-            6) return ;;
+            10) return ;;
             *) 
                 error_msg "Invalid option"
                 return
