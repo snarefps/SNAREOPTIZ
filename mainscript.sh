@@ -1098,7 +1098,7 @@ draw_graph() {
     printf "%${filled}s" | tr ' ' '█'
     printf "%${empty}s" | tr ' ' '.'
     printf "] %d%%\n" "$percentage"
-}
+} 
 
 # Advanced UI Functions
 show_advanced_menu() {
