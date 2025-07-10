@@ -87,6 +87,37 @@ show_welcome_banner() {
     echo -e "${RED}Note: XanMod kernel installation is not included in full optimization${NC}"
     echo -e "${BLUE}----------------------------------------${NC}"
     echo
+
+    show_system_summary() {
+    local width=60
+    local hostname=$(hostname)
+    local os=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)
+    local kernel=$(uname -r)
+    local uptime=$(uptime -p)
+    local cpu_model=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | sed 's/^ *//')
+    local cpu_cores=$(nproc)
+    local ram=$(free -h | awk '/Mem:/ {print $2}')
+    local disk=$(df -h / | awk 'NR==2{print $3 "/" $2 " (" $5 ")"}')
+    local ipv4=$(hostname -I | awk '{print $1}')
+    local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
+    local net_status
+    if ping -c1 -W1 1.1.1.1 &>/dev/null; then
+        net_status="${GREEN}Online${NC}"
+    else
+        net_status="${RED}Offline${NC}"
+    fi
+    
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    echo -e "${CYAN}║${NC}         ${YELLOW}SYSTEM SUMMARY${NC}                                      ${CYAN}║${NC}"
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    printf "${GREEN} Hostname:${NC} %-20s  ${GREEN}OS:${NC} %s\n" "$hostname" "$os"
+    printf "${GREEN} Kernel:${NC} %-21s  ${GREEN}Uptime:${NC} %s\n" "$kernel" "$uptime"
+    printf "${GREEN} CPU:${NC} %-24s  ${GREEN}Cores:${NC} %s\n" "$cpu_model" "$cpu_cores"
+    printf "${GREEN} RAM:${NC} %-25s  ${GREEN}Disk:${NC} %s\n" "$ram" "$disk"
+    printf "${GREEN} IPv4:${NC} %-23s  ${GREEN}IPv6:${NC} %s\n" "${ipv4:-N/A}" "${ipv6:-N/A}"
+    printf "${GREEN} Network:${NC} %s\n" "$net_status"
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}\n"
+    }
     
     # Show loading animation
     echo -ne "${CYAN}Initializing SNARE OPTIZ"
@@ -98,6 +129,9 @@ show_welcome_banner() {
     loading_bar 2
     echo
 }
+
+
+
 
 # Function to display section header
 section_header() {
@@ -437,36 +471,6 @@ show_description_and_confirm() {
     [[ "$confirm" =~ ^([yY][eE][sS]|[yY])$ ]]
 }
 
-show_system_summary() {
-    local width=60
-    local hostname=$(hostname)
-    local os=$(cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)
-    local kernel=$(uname -r)
-    local uptime=$(uptime -p)
-    local cpu_model=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | sed 's/^ *//')
-    local cpu_cores=$(nproc)
-    local ram=$(free -h | awk '/Mem:/ {print $2}')
-    local disk=$(df -h / | awk 'NR==2{print $3 "/" $2 " (" $5 ")"}')
-    local ipv4=$(hostname -I | awk '{print $1}')
-    local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
-    local net_status
-    if ping -c1 -W1 1.1.1.1 &>/dev/null; then
-        net_status="${GREEN}Online${NC}"
-    else
-        net_status="${RED}Offline${NC}"
-    fi
-    
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -e "${CYAN}║${NC}         ${YELLOW}SYSTEM SUMMARY${NC}                                      ${CYAN}║${NC}"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    printf "${GREEN} Hostname:${NC} %-20s  ${GREEN}OS:${NC} %s\n" "$hostname" "$os"
-    printf "${GREEN} Kernel:${NC} %-21s  ${GREEN}Uptime:${NC} %s\n" "$kernel" "$uptime"
-    printf "${GREEN} CPU:${NC} %-24s  ${GREEN}Cores:${NC} %s\n" "$cpu_model" "$cpu_cores"
-    printf "${GREEN} RAM:${NC} %-25s  ${GREEN}Disk:${NC} %s\n" "$ram" "$disk"
-    printf "${GREEN} IPv4:${NC} %-23s  ${GREEN}IPv6:${NC} %s\n" "${ipv4:-N/A}" "${ipv6:-N/A}"
-    printf "${GREEN} Network:${NC} %s\n" "$net_status"
-    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}\n"
-}
 
 show_main_menu() {
     local width=60
