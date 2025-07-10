@@ -475,11 +475,10 @@ show_main_menu() {
     echo -e "${GREEN}10.${NC} Set system timezone"
     echo -e "${GREEN}11.${NC} Show current system status"
     echo -e "${GREEN}12.${NC} Advanced Options ${PURPLE}[NEW!]${NC}"
-    echo -e "${GREEN}13.${NC} Network Bandwidth Limiter ${YELLOW}[NEW!]${NC}"
-    echo -e "${GREEN}14.${NC} Exit"
+    echo -e "${GREEN}13.${NC} Exit"
     echo
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -n "Enter your choice [1-14]: "
+    echo -n "Enter your choice [1-13]: "
 }
 
 # Function to optimize CPU
@@ -1423,96 +1422,10 @@ show_main_menu() {
     echo -e "${GREEN}10.${NC} Set system timezone"
     echo -e "${GREEN}11.${NC} Show current system status"
     echo -e "${GREEN}12.${NC} Advanced Options ${PURPLE}[NEW!]${NC}"
-    echo -e "${GREEN}13.${NC} Network Bandwidth Limiter ${YELLOW}[NEW!]${NC}"
-    echo -e "${GREEN}14.${NC} Exit"
+    echo -e "${GREEN}13.${NC} Exit"
     echo
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -n "Enter your choice [1-14]: "
-}
-
-# Add new function for bandwidth limiting
-network_bandwidth_limiter() {
-    section_header "NETWORK BANDWIDTH LIMITER"
-    info_msg "This feature allows you to safely limit your server's network bandwidth using wondershaper."
-    
-    # Check and install wondershaper if needed
-    if ! command -v wondershaper &>/dev/null; then
-        info_msg "Installing wondershaper..."
-        if command -v apt-get &>/dev/null; then
-            apt-get update && apt-get install -y wondershaper
-        elif command -v yum &>/dev/null; then
-            yum install -y epel-release && yum install -y wondershaper
-        elif command -v dnf &>/dev/null; then
-            dnf install -y wondershaper
-        else
-            error_msg "No supported package manager found. Please install wondershaper manually."
-            return
-        fi
-    fi
-    
-    # List interfaces
-    echo -e "\n${CYAN}Available network interfaces:${NC}"
-    interfaces=( $(ls /sys/class/net | grep -v lo) )
-    select iface in "${interfaces[@]}" "Cancel"; do
-        if [[ "$iface" == "Cancel" ]]; then
-            return
-        elif [[ -n "$iface" ]]; then
-            break
-        else
-            error_msg "Invalid selection. Try again."
-        fi
-    done
-    
-    # Preset bandwidths (in Mbit/s)
-    echo -e "\n${CYAN}Select bandwidth limit:${NC}"
-    echo "1. 50 Mbit/s"
-    echo "2. 100 Mbit/s"
-    echo "3. 1 Gbit/s"
-    echo "4. 2 Gbit/s"
-    echo "5. 5 Gbit/s"
-    echo "6. 10 Gbit/s"
-    echo "7. Custom value (Mbit/s)"
-    echo "8. Remove limit (reset)"
-    echo "9. Cancel"
-    read -p "Enter choice [1-9]: " bw_choice
-    case $bw_choice in
-        1) rate=50 ;;
-        2) rate=100 ;;
-        3) rate=1000 ;;
-        4) rate=2000 ;;
-        5) rate=5000 ;;
-        6) rate=10000 ;;
-        7)
-            read -p "Enter custom bandwidth in Mbit/s (e.g. 75): " custom_rate
-            if [[ "$custom_rate" =~ ^[0-9]+$ ]] && [ "$custom_rate" -gt 0 ]; then
-                rate=$custom_rate
-            else
-                error_msg "Invalid value."
-                return
-            fi
-            ;;
-        8)
-            wondershaper clear $iface
-            success_msg "Bandwidth limit removed from $iface."
-            return
-            ;;
-        9) return ;;
-        *) error_msg "Invalid option."; return ;;
-    esac
-    
-    # Confirm and apply
-    echo -e "\n${YELLOW}You are about to limit $iface to $rate Mbit/s (both up & down).${NC}"
-    read -p "Are you sure? (y/n): " confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        info_msg "Operation cancelled."
-        return
-    fi
-    wondershaper $iface $rate $rate
-    if [ $? -eq 0 ]; then
-        success_msg "Bandwidth limit of $rate Mbit/s applied to $iface."
-    else
-        error_msg "Failed to apply bandwidth limit."
-    fi
+    echo -n "Enter your choice [1-13]: "
 }
 
 # Update main program loop
@@ -1567,8 +1480,7 @@ while true; do
                 fi
             done
             ;;
-        13) network_bandwidth_limiter ;;
-        14)
+        13)
             echo -e "\n${GREEN}╔════════════════════════════════════════╗${NC}"
             echo -e "${GREEN}║  Thank you for using SNARE OPTIZ! ║${NC}"
             echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
