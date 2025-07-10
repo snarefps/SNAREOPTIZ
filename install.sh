@@ -13,12 +13,12 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Create directory for scripts
-mkdir -p /opt/server-optimizer
+mkdir -p /opt/snareoptiz
 
 # Check for local file first
 echo "Looking for mainscript.sh..."
 if [ -f "mainscript.sh" ]; then
-    echo "Found local server_optimizer.sh file."
+    echo "Found local snareoptiz file."
     cp mainscript.sh /opt/snareoptiz/mainscript.sh
     echo "Copied to installation directory."
 else
