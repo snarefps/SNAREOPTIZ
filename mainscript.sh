@@ -100,12 +100,15 @@ show_welcome_banner() {
     local ipv6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | head -n1)
     local uptime=$(uptime -p)
     # Print summary box (columnar)
-    echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
-    printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-22s ${CYAN}CPU:${NC} %-30s ${GREEN}\n" "$hostname" "$cpu"║
-    printf "${GREEN}║${NC}  ${CYAN}OS:${NC} %-24s ${CYAN}Cores:${NC} %-3s ${CYAN}RAM:${NC} %-10s ${GREEN}\n" "$os" "$cpu_cores" "$ram"║
-    printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-10s free / %-10s total ${CYAN}Uptime:${NC} %-18s ${GREEN}\n" "$disk_free" "$disk_total" "$uptime"║
-    printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} ${RED}%-39s${NC} ${CYAN}IPv6:${NC} %-30s${GREEN}\n" "$ipv4" "${ipv6:-N/A}"║
-    echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+
+printf "${GREEN}║${NC}  ${CYAN}Host:${NC} %-22s ${CYAN}CPU:${NC} %-30s ${GREEN}║${NC}\n" "$hostname" "$cpu"
+printf "${GREEN}║${NC}  ${CYAN}OS:${NC} %-24s ${CYAN}Cores:${NC} %-3s ${CYAN}RAM:${NC} %-10s ${GREEN}║${NC}\n" "$os" "$cpu_cores" "$ram"
+printf "${GREEN}║${NC}  ${CYAN}Disk:${NC} %-10s free / %-10s total ${CYAN}Uptime:${NC} %-18s ${GREEN}║${NC}\n" "$disk_free" "$disk_total" "$uptime"
+printf "${GREEN}║${NC}  ${CYAN}IPv4:${NC} ${RED}%-39s${NC} ${CYAN}IPv6:${NC} %-30s${GREEN}║${NC}\n" "$ipv4" "${ipv6:-N/A}"
+
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+
     echo
     # Show loading animation
     echo -ne "${CYAN}Initializing SNARE OPTIZ"
