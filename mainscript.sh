@@ -12,19 +12,56 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Function to show option description and get confirmation
+show_description_and_confirm() {
+    local title=$1
+    local description=$2
+    
+    local width=70
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}                      ${PURPLE}⚡ $title ⚡${NC}                      ${CYAN}│${NC}"
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC} ${YELLOW}Description:${NC}                                                    ${CYAN}│${NC}"
+    
+    # Word wrap the description
+    local desc_lines=$(echo "$description" | fold -s -w 65)
+    while IFS= read -r line; do
+        printf "${CYAN}│${NC} %-68s ${CYAN}│${NC}\n" "$line"
+    done <<< "$desc_lines"
+    
+    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}Proceed with this optimization? [y/n]:${NC}                           ${CYAN}│${NC}"
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
+    echo
+    read -p "$(echo -e ${GREEN}">>${NC} ")" confirm
+    [[ "$confirm" =~ ^([yY][eE][sS]|[yY])$ ]]
+}
+
+# Function to display section header
+section_header() {
+    local title=$1
+    local width=70
+    echo
+    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
+    echo -e "${CYAN}│${NC}$(printf '%*s' $(( (width + ${#title}) / 2)) "${PURPLE}⚡ $title ⚡${NC}")$(printf '%*s' $(( (width - ${#title}) / 2)) "")${CYAN}│${NC}"
+    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
+    echo
+}
+
 # Progress and UI Functions
 show_progress() {
     local duration=${1:-1}
     local width=50
     local progress=0
     
-    echo -ne "${YELLOW}Progress: ${NC}${CYAN}[${NC}"
+    echo -ne "${YELLOW}Progress: ${NC}"
+    echo -ne "${CYAN}[${NC}"
     while [ $progress -lt $width ]; do
-        echo -ne "${YELLOW}⚡${NC}"
+        echo -ne "${GREEN}⚡${NC}"
         progress=$((progress + 1))
         sleep $(echo "scale=3; $duration/$width" | bc)
     done
-    echo -e "${CYAN}]${NC} ${GREEN}Done!${NC}"
+    echo -e "${CYAN}]${NC} ${GREEN}✓${NC}"
 }
 
 # Function to show animated dots
@@ -35,30 +72,31 @@ show_dots() {
     local dots=""
     local elapsed=0
     
-    echo -ne "$message"
+    echo -ne "${YELLOW}$message${NC}"
     while (( $(echo "$elapsed < $duration" | bc -l) )); do
-        echo -ne " ⚡"
+        echo -ne "${GREEN}⚡${NC}"
         sleep $interval
         elapsed=$(echo "$elapsed + $interval" | bc)
     done
-    echo -e " ${GREEN}Done!${NC}"
+    echo -e " ${GREEN}✓${NC}"
 }
 
-# Animation functions
+# Function to show spinner
 spinner() {
     local pid=$1
     local delay=0.1
-    local spinstr='|/-\'
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
         local temp=${spinstr#?}
-        printf " [%c]  " "$spinstr"
+        printf " %c  " "$spinstr"
         local spinstr=$temp${spinstr%"$temp"}
         sleep $delay
-        printf "\b\b\b\b\b\b"
+        printf "\b\b\b\b"
     done
     printf "    \b\b\b\b"
 }
 
+# Function to show animated loading bar
 loading_bar() {
     local duration=$1
     local width=50
@@ -69,7 +107,7 @@ loading_bar() {
         echo -ne "${YELLOW}⚡${NC}"
         sleep $interval
     done
-    echo -e "${CYAN}]${NC} ${GREEN}Done!${NC}"
+    echo -e "${CYAN}]${NC} ${GREEN}✓${NC}"
 }
 
 show_welcome_banner() {
@@ -144,20 +182,21 @@ show_welcome_banner() {
 # Function to display section header
 section_header() {
     local title=$1
-    local width=70
-    echo
-    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
-    echo -e "${CYAN}│${NC}                      ${PURPLE}⚡ $title ⚡${NC}                           ${CYAN}│${NC}"
-    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
-    echo
+    local cols=$(tput cols)
+    local title_len=${#title}
+    local padding=$(( (cols - title_len - 4) / 2 ))
+    
+    echo -e "\n${BLUE}$(printf '=%.0s' $(seq 1 $cols))${NC}"
+    echo -e "${BLUE}=$(printf ' %.0s' $(seq 1 $padding))${CYAN} $title ${BLUE}$(printf ' %.0s' $(seq 1 $padding))=${NC}"
+    echo -e "${BLUE}$(printf '=%.0s' $(seq 1 $cols))${NC}\n"
 }
 
 # Function to display success message
 success_msg() {
-    echo -e "${GREEN}✓${NC} $1"
+    echo -e "${GREEN}✓ $1${NC}"
     echo -ne "${CYAN}Processing"
     for i in {1..3}; do
-        echo -ne " ⚡"
+        echo -ne "."
         sleep 0.1
     done
     echo -e "${NC}"
@@ -165,12 +204,12 @@ success_msg() {
 
 # Function to display error message
 error_msg() {
-    echo -e "${RED}✗${NC} $1"
+    echo -e "${RED}✗ $1${NC}"
 }
 
 # Function to display info message
 info_msg() {
-    echo -e "${YELLOW}ℹ${NC} $1"
+    echo -e "${YELLOW}ℹ $1${NC}"
 }
 
 # Must run as root
@@ -191,13 +230,16 @@ This is recommended for better DNS resolution speed and security."
 
     if show_description_and_confirm "DNS OPTIMIZATION" "$description"; then
         section_header "DNS OPTIMIZATION"
-        info_msg "Optimizing DNS settings..."
-
+        
+        echo -e "${CYAN}╭─ DNS Configuration Steps ───────────────────────────────────────╮${NC}"
+        
         # Backup resolv.conf
+        echo -e "${CYAN}│${NC} 📋 Backing up current DNS configuration..."
         cp /etc/resolv.conf /etc/resolv.conf.bak
         success_msg "Backed up original resolv.conf"
 
         # Add popular DNS servers
+        echo -e "${CYAN}│${NC} 🔄 Configuring new DNS servers..."
         cat > /etc/resolv.conf << EOF
 nameserver 1.1.1.1
 nameserver 1.0.0.1
@@ -208,6 +250,7 @@ EOF
 
         # Optimize systemd-resolved if available
         if is_systemd_available && systemctl is-active systemd-resolved >/dev/null 2>&1; then
+            echo -e "${CYAN}│${NC} ⚙️ Optimizing systemd-resolved..."
             cat > /etc/systemd/resolved.conf << EOF
 [Resolve]
 DNS=1.1.1.1 1.0.0.1 8.8.8.8 8.8.4.4
@@ -221,6 +264,7 @@ EOF
             success_msg "Optimized systemd-resolved configuration"
         fi
 
+        echo -e "${CYAN}╰────────────────────────────────────────────────────────────╯${NC}"
         show_progress 1
         success_msg "DNS optimization completed"
     fi
@@ -239,24 +283,32 @@ This is recommended for getting maximum performance from your hardware."
 
     if show_description_and_confirm "XANMOD KERNEL INSTALLATION" "$description"; then
         section_header "XANMOD KERNEL INSTALLATION"
-        info_msg "Installing XanMod kernel..."
-
+        
+        echo -e "${CYAN}╭─ XanMod Installation Steps ────────────────────────────────────╮${NC}"
+        
         # Add XanMod repository
+        echo -e "${CYAN}│${NC} 🔑 Adding XanMod repository key..."
         curl -fsSL https://dl.xanmod.org/gpg.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg
+        
+        echo -e "${CYAN}│${NC} 📦 Configuring repository..."
         echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' | tee /etc/apt/sources.list.d/xanmod-release.list
 
         # Update and install XanMod kernel
+        echo -e "${CYAN}│${NC} 🔄 Updating package lists..."
         apt update
+        
+        echo -e "${CYAN}│${NC} 💿 Installing XanMod kernel..."
         apt install -y linux-xanmod-x64v3
         success_msg "XanMod kernel installed"
 
+        echo -e "${CYAN}╰────────────────────────────────────────────────────────────╯${NC}"
         show_progress 1
         success_msg "XanMod kernel installation completed"
         info_msg "Please reboot your system to use the new kernel"
     fi
 }
 
-# Function to configure BBR and congestion control
+# Function to configure BBR
 configure_bbr() {
     local description="This will configure TCP congestion control with options:
 - BBR: Google's standard congestion control algorithm
@@ -268,19 +320,23 @@ This is recommended for optimizing network throughput."
 
     if show_description_and_confirm "BBR CONFIGURATION" "$description"; then
         section_header "BBR CONFIGURATION"
-        info_msg "Configuring TCP congestion control..."
-
-        echo -e "${CYAN}Available congestion control algorithms:${NC}"
-        echo "1. BBR (Google's TCP congestion control)"
-        echo "2. BBR2 (Newer version of BBR)"
-        echo "3. BBRplus (BBR with additional features)"
-        echo "4. BBRv2 (BBR version 2)"
-        echo "5. Return to main menu"
+        
+        echo -e "${CYAN}╭─ Available BBR Options ──────────────────────────────────────╮${NC}"
+        echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[1]${NC} 🚀 BBR (Google's TCP congestion control)                      ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[2]${NC} 🔥 BBR2 (Newer version of BBR)                               ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[3]${NC} ⚡ BBRplus (BBR with additional features)                     ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[4]${NC} 💫 BBRv2 (BBR version 2)                                     ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${RED}[5]${NC} 🚪 Return to main menu                                         ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+        echo -e "${CYAN}╰────────────────────────────────────────────────────────────╯${NC}"
         echo
-        read -p "Select congestion control algorithm [1-5]: " bbr_choice
+        echo -ne "${GREEN}Select congestion control algorithm${NC} ${YELLOW}[1-5]${NC}: "
+        read bbr_choice
 
         case $bbr_choice in
             1)
+                echo -e "${CYAN}╭─ Configuring BBR ───────────────────────────────────────────╮${NC}"
                 cat > /etc/sysctl.d/99-bbr.conf << EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
@@ -288,6 +344,7 @@ EOF
                 success_msg "BBR configured"
                 ;;
             2)
+                echo -e "${CYAN}╭─ Configuring BBR2 ──────────────────────────────────────────╮${NC}"
                 cat > /etc/sysctl.d/99-bbr.conf << EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr2
@@ -295,6 +352,7 @@ EOF
                 success_msg "BBR2 configured"
                 ;;
             3)
+                echo -e "${CYAN}╭─ Configuring BBRplus ───────────────────────────────────────╮${NC}"
                 cat > /etc/sysctl.d/99-bbr.conf << EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbrplus
@@ -302,6 +360,7 @@ EOF
                 success_msg "BBRplus configured"
                 ;;
             4)
+                echo -e "${CYAN}╭─ Configuring BBRv2 ──────────────────────────────────────────╮${NC}"
                 cat > /etc/sysctl.d/99-bbr.conf << EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbrv2
@@ -320,6 +379,7 @@ EOF
         sysctl --system
         show_progress 2
         success_msg "TCP congestion control configuration completed"
+        echo -e "${CYAN}╰────────────────────────────────────────────────────────────╯${NC}"
         show_dots "Processing" 1
     fi
 }
@@ -334,26 +394,28 @@ This is recommended to ensure correct date and time display."
 
     if show_description_and_confirm "TIMEZONE CONFIGURATION" "$description"; then
         section_header "TIMEZONE CONFIGURATION"
-        info_msg "Setting system timezone..."
-
+        
         # Get current timezone
         current_tz=$(timedatectl | grep "Time zone" | awk '{print $3}')
-        info_msg "Current timezone: $current_tz"
-
-        # List common timezones
-        echo -e "\n${CYAN}Common timezones:${NC}"
-        echo "1. Asia/Tehran (Iran)"
-        echo "2. Europe/London (UK)"
-        echo "3. America/New_York (US East)"
-        echo "4. Asia/Dubai (UAE)"
-        echo "5. Europe/Berlin (Germany)"
-        echo "6. Europe/Paris (France)"
-        echo "7. Europe/Amsterdam (Netherlands)"
-        echo "8. Europe/Helsinki (Finland)"
-        echo "9. Custom timezone"
-        echo "10. Return to main menu"
+        
+        echo -e "${CYAN}╭─ Timezone Configuration ────────────────────────────────────────╮${NC}"
+        echo -e "${CYAN}│${NC} 🕒 Current timezone: $current_tz"
+        echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC} Common timezones:                                                  ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[1]${NC} 🌅 Asia/Tehran (Iran)                                        ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[2]${NC} 🌍 Europe/London (UK)                                       ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[3]${NC} 🌎 America/New_York (US East)                               ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[4]${NC} 🌅 Asia/Dubai (UAE)                                         ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[5]${NC} 🌍 Europe/Berlin (Germany)                                  ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[6]${NC} 🌍 Europe/Paris (France)                                    ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[7]${NC} 🌍 Europe/Amsterdam (Netherlands)                           ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[8]${NC} 🌍 Europe/Helsinki (Finland)                                ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${GREEN}[9]${NC} 🌐 Custom timezone                                          ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${RED}[10]${NC} 🚪 Return to main menu                                       ${CYAN}│${NC}"
+        echo -e "${CYAN}╰────────────────────────────────────────────────────────────╯${NC}"
         echo
-        read -p "Select timezone [1-10]: " tz_choice
+        echo -ne "${GREEN}Select timezone${NC} ${YELLOW}[1-10]${NC}: "
+        read tz_choice
 
         case $tz_choice in
             1) timedatectl set-timezone Asia/Tehran ;;
@@ -365,23 +427,25 @@ This is recommended to ensure correct date and time display."
             7) timedatectl set-timezone Europe/Amsterdam ;;
             8) timedatectl set-timezone Europe/Helsinki ;;
             9)
+                echo -e "${CYAN}╭─ Custom Timezone Selection ─────────────────────────────────╮${NC}"
                 # Interactive timezone selection
-                echo -e "\n${CYAN}Select timezone region:${NC}"
+                echo -e "${CYAN}│${NC} Select timezone region:"
                 regions=($(timedatectl list-timezones | cut -d'/' -f1 | sort | uniq))
                 for i in "${!regions[@]}"; do
-                    echo "$((i+1)). ${regions[i]}"
+                    printf "${CYAN}│${NC}  ${GREEN}[%d]${NC} %s\n" "$((i+1))" "${regions[i]}"
                 done
-                echo
-                read -p "Enter region number: " region_num
+                echo -e "${CYAN}│${NC}"
+                echo -ne "${GREEN}Enter region number${NC}: "
+                read region_num
                 
                 if [[ $region_num =~ ^[0-9]+$ ]] && [ $region_num -ge 1 ] && [ $region_num -le ${#regions[@]} ]; then
                     selected_region=${regions[$((region_num-1))]}
-                    echo -e "\n${CYAN}Select city in ${selected_region}:${NC}"
+                    echo -e "${CYAN}│${NC} Select city in ${selected_region}:"
                     cities=($(timedatectl list-timezones | grep "^${selected_region}/" | cut -d'/' -f2- | sort))
                     
                     # Display cities with paging if there are many
                     if [ ${#cities[@]} -gt 20 ]; then
-                        echo -e "${YELLOW}There are ${#cities[@]} cities. Showing in pages.${NC}"
+                        echo -e "${YELLOW}│ There are ${#cities[@]} cities. Showing in pages.${NC}"
                         page=0
                         page_size=20
                         total_pages=$(( (${#cities[@]} + page_size - 1) / page_size ))
@@ -393,13 +457,15 @@ This is recommended to ensure correct date and time display."
                                 end_idx=$((${#cities[@]} - 1))
                             fi
                             
-                            echo -e "\n${CYAN}Page $((page+1))/$total_pages:${NC}"
+                            echo -e "${CYAN}│${NC} Page $((page+1))/$total_pages:"
                             for i in $(seq $start_idx $end_idx); do
-                                echo "$((i+1)). ${cities[i]}"
+                                printf "${CYAN}│${NC}  ${GREEN}[%d]${NC} %s\n" "$((i+1))" "${cities[i]}"
                             done
                             
-                            echo -e "\n${YELLOW}[n]${NC} Next page, ${YELLOW}[p]${NC} Previous page, ${YELLOW}[s]${NC} Select city, ${YELLOW}[c]${NC} Cancel"
-                            read -p "Action: " page_action
+                            echo -e "${CYAN}│${NC}"
+                            echo -e "${CYAN}│${NC} ${YELLOW}[n]${NC} Next page, ${YELLOW}[p]${NC} Previous page, ${YELLOW}[s]${NC} Select city, ${YELLOW}[c]${NC} Cancel"
+                            echo -ne "${GREEN}Action${NC}: "
+                            read page_action
                             
                             case $page_action in
                                 n|N) 
@@ -413,7 +479,8 @@ This is recommended to ensure correct date and time display."
                                     fi
                                     ;;
                                 s|S)
-                                    read -p "Enter city number: " city_num
+                                    echo -ne "${GREEN}Enter city number${NC}: "
+                                    read city_num
                                     if [[ $city_num =~ ^[0-9]+$ ]] && [ $city_num -ge 1 ] && [ $city_num -le ${#cities[@]} ]; then
                                         selected_city=${cities[$((city_num-1))]}
                                         custom_tz="${selected_region}/${selected_city}"
@@ -432,10 +499,11 @@ This is recommended to ensure correct date and time display."
                     else
                         # If few cities, show them all at once
                         for i in "${!cities[@]}"; do
-                            echo "$((i+1)). ${cities[i]}"
+                            printf "${CYAN}│${NC}  ${GREEN}[%d]${NC} %s\n" "$((i+1))" "${cities[i]}"
                         done
-                        echo
-                        read -p "Enter city number: " city_num
+                        echo -e "${CYAN}│${NC}"
+                        echo -ne "${GREEN}Enter city number${NC}: "
+                        read city_num
                         
                         if [[ $city_num =~ ^[0-9]+$ ]] && [ $city_num -ge 1 ] && [ $city_num -le ${#cities[@]} ]; then
                             selected_city=${cities[$((city_num-1))]}
@@ -451,6 +519,7 @@ This is recommended to ensure correct date and time display."
                     error_msg "Invalid region number"
                     return
                 fi
+                echo -e "${CYAN}╰────────────────────────────────────────────────────────────╯${NC}"
                 ;;
             10) return ;;
             *) 
@@ -463,72 +532,6 @@ This is recommended to ensure correct date and time display."
         success_msg "Timezone updated to: $new_tz"
         show_progress 1
     fi
-}
-
-# Function to show option description and get confirmation
-show_description_and_confirm() {
-    local title=$1
-    local description=$2
-    local width=70
-    
-    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
-    echo -e "${CYAN}│${NC}                      ${PURPLE}⚡ $title ⚡${NC}                           ${CYAN}│${NC}"
-    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
-    echo -e "${CYAN}│${NC} ${YELLOW}Description:${NC}                                                      ${CYAN}│${NC}"
-    
-    # Word wrap the description
-    local words=($description)
-    local line=""
-    for word in "${words[@]}"; do
-        if [ ${#line} -gt 0 ]; then
-            if [ $((${#line} + ${#word} + 1)) -lt 65 ]; then
-                line="$line $word"
-            else
-                echo -e "${CYAN}│${NC} $line$(printf '%*s' $((65 - ${#line})) '')${CYAN}│${NC}"
-                line="$word"
-            fi
-        else
-            line="$word"
-        fi
-    done
-    if [ ${#line} -gt 0 ]; then
-        echo -e "${CYAN}│${NC} $line$(printf '%*s' $((65 - ${#line})) '')${CYAN}│${NC}"
-    fi
-    
-    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
-    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
-    echo -ne "${CYAN}│${NC} ${GREEN}Proceed with this optimization? [y/n]:${NC} "
-    read -n 1 -r confirm
-    echo
-    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
-    [[ "$confirm" =~ ^([yY][eE][sS]|[yY])$ ]]
-}
-
-# Update show_main_menu with new style
-show_main_menu() {
-    local width=70
-    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
-    echo -e "${CYAN}│${NC}                    ${PURPLE}⚡ SNARE OPTIZ MAIN MENU ⚡${NC}                      ${CYAN}│${NC}"
-    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
-    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[1]${NC} 🚀 Run Full Optimization ${YELLOW}[Recommended]${NC}                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[2]${NC} 💻 Optimize CPU Settings                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[3]${NC} 🎮 Optimize Memory Settings                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[4]${NC} 🌐 Optimize Network Settings                                   ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[5]${NC} 🔒 Optimize SSH Settings                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[6]${NC} ⚡ Setup Anti-throttling                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[7]${NC} 🔍 Optimize DNS Settings                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[8]${NC} 🖥️  Install XanMod Kernel ${YELLOW}[Separate Installation]${NC}             ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[9]${NC} 📊 Configure BBR Options                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[10]${NC} 🕒 Set System Timezone                                        ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[11]${NC} 📈 Show Current System Status                                 ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[12]${NC} ⚙️  Advanced Options ${PURPLE}[NEW!]${NC}                                   ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
-    echo -e "${CYAN}│${NC}  ${RED}[13]${NC} 🚪 Exit                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
-    echo
-    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[1-13]${NC}: "
 }
 
 # Function to optimize CPU
@@ -1547,29 +1550,27 @@ generate_optimization_recommendations() {
 
 # Update main menu to include new advanced options
 show_main_menu() {
-    local width=70
-    echo -e "${CYAN}╭$(printf '─%.0s' $(seq 1 $width))╮${NC}"
-    echo -e "${CYAN}│${NC}                    ${PURPLE}⚡ SNARE OPTIZ MAIN MENU ⚡${NC}                      ${CYAN}│${NC}"
-    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
-    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[1]${NC} 🚀 Run Full Optimization ${YELLOW}[Recommended]${NC}                         ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[2]${NC} 💻 Optimize CPU Settings                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[3]${NC} 🎮 Optimize Memory Settings                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[4]${NC} 🌐 Optimize Network Settings                                   ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[5]${NC} 🔒 Optimize SSH Settings                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[6]${NC} ⚡ Setup Anti-throttling                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[7]${NC} 🔍 Optimize DNS Settings                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[8]${NC} 🖥️  Install XanMod Kernel ${YELLOW}[Separate Installation]${NC}             ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[9]${NC} 📊 Configure BBR Options                                       ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[10]${NC} 🕒 Set System Timezone                                        ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[11]${NC} 📈 Show Current System Status                                 ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${GREEN}[12]${NC} ⚙️  Advanced Options ${PURPLE}[NEW!]${NC}                                   ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}                                                                    ${CYAN}│${NC}"
-    echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
-    echo -e "${CYAN}│${NC}  ${RED}[13]${NC} 🚪 Exit                                                         ${CYAN}│${NC}"
-    echo -e "${CYAN}╰$(printf '─%.0s' $(seq 1 $width))╯${NC}"
+    local width=60
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    echo -e "${CYAN}║${NC}                     ${GREEN}SNARE OPTIZ MENU${NC}                      ${CYAN}║${NC}"
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
     echo
-    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[1-13]${NC}: "
+    echo -e "${GREEN}1.${NC} Run full optimization (recommended) ${YELLOW}[XanMod not included]${NC}"
+    echo -e "${GREEN}2.${NC} Optimize CPU settings only"
+    echo -e "${GREEN}3.${NC} Optimize memory settings only"
+    echo -e "${GREEN}4.${NC} Optimize network settings only"
+    echo -e "${GREEN}5.${NC} Optimize SSH settings only"
+    echo -e "${GREEN}6.${NC} Setup anti-throttling measures only"
+    echo -e "${GREEN}7.${NC} Optimize DNS settings"
+    echo -e "${GREEN}8.${NC} Install XanMod kernel ${CYAN}[Separate Installation]${NC}"
+    echo -e "${GREEN}9.${NC} Configure BBR options"
+    echo -e "${GREEN}10.${NC} Set system timezone"
+    echo -e "${GREEN}11.${NC} Show current system status"
+    echo -e "${GREEN}12.${NC} Advanced Options ${PURPLE}[NEW!]${NC}"
+    echo -e "${GREEN}13.${NC} Exit"
+    echo
+    echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
+    echo -n "Enter your choice [1-13]: "
 }
 
 # Update main program loop
