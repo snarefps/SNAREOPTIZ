@@ -36,7 +36,7 @@ fi
 chmod +x /opt/server-optimizer/server_optimizer.sh
 
 # Create symlink for easy access
-ln -sf /opt/server-optimizer/server_optimizer.sh /usr/local/bin/server-optimizer
+ln -sf /opt/server-optimizer/server_optimizer.sh /usr/local/bin/optiz
 
 # Check for required dependencies
 echo "Checking dependencies..."
@@ -63,5 +63,5 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 fi
 
 echo "Installation complete!"
-echo "You can now run the optimization script with: sudo server-optimizer"
+echo "You can now run the optimization script with: sudo optiz"
 echo "Or from its location: sudo /opt/server-optimizer/server_optimizer.sh"
