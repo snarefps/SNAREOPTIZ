@@ -16,27 +16,27 @@ fi
 mkdir -p /opt/server-optimizer
 
 # Check for local file first
-echo "Looking for server_optimizer.sh..."
-if [ -f "server_optimizer.sh" ]; then
+echo "Looking for mainscript.sh..."
+if [ -f "mainscript.sh" ]; then
     echo "Found local server_optimizer.sh file."
-    cp server_optimizer.sh /opt/server-optimizer/server_optimizer.sh
+    cp mainscript.sh /opt/snareoptiz/mainscript.sh
     echo "Copied to installation directory."
 else
     echo "Local file not found. Checking GitHub..."
-    if curl -s -f -o /opt/server-optimizer/server_optimizer.sh https://raw.githubusercontent.com/snarefps/SNAREOPTIZ/main/mainscript.sh; then
+    if curl -s -f -o /opt/snareoptiz/mainscript.sh https://raw.githubusercontent.com/snarefps/SNAREOPTIZ/main/mainscript.sh; then
         echo "Download successful!"
     else
-        echo "Error: Could not find server_optimizer.sh. Installation failed."
+        echo "Error: Could not find mainscript.sh. Installation failed."
         echo "Please make sure the file exists in the current directory or in the GitHub repository."
         exit 1
     fi
 fi
 
 # Make script executable
-chmod +x /opt/server-optimizer/server_optimizer.sh
+chmod +x /opt/snareoptiz/mainscript.sh
 
 # Create symlink for easy access
-ln -sf /opt/server-optimizer/server_optimizer.sh /usr/local/bin/optiz
+ln -sf /opt/snareoptiz/mainscript.sh /usr/local/bin/optiz
 
 # Check for required dependencies
 echo "Checking dependencies..."
@@ -64,4 +64,4 @@ fi
 
 echo "Installation complete!"
 echo "You can now run the optimization script with: sudo optiz"
-echo "Or from its location: sudo /opt/server-optimizer/server_optimizer.sh"
+echo "Or from its location: sudo /opt/snareoptiz/mainscript.sh"
