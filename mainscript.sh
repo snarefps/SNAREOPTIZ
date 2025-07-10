@@ -1081,9 +1081,81 @@ show_advanced_menu() {
     echo -e "${GREEN}C.${NC} Generate System Report ${CYAN}[Detailed Analysis]${NC}"
     echo -e "${GREEN}D.${NC} System Diagnostics ${CYAN}[Problem Detection]${NC}"
     echo -e "${GREEN}E.${NC} Return to Main Menu"
+    echo -e "${GREEN}F.${NC} Network Bandwidth Limiter ${CYAN}[wondershaper]${NC}"
     echo
     echo -e "${CYAN}$(printf '═%.0s' $(seq 1 $width))${NC}"
-    echo -n "Enter your choice [A-E]: "
+    echo -n "Enter your choice [A-F]: "
+}
+
+limit_bandwidth() {
+    section_header "NETWORK BANDWIDTH LIMITER"
+    # Check and install wondershaper if needed
+    if ! command -v wondershaper &>/dev/null; then
+        info_msg "wondershaper not found. Installing..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update && apt-get install -y wondershaper
+        elif command -v yum &>/dev/null; then
+            yum install -y epel-release && yum install -y wondershaper
+        elif command -v dnf &>/dev/null; then
+            dnf install -y wondershaper
+        else
+            error_msg "Could not install wondershaper. Please install it manually."
+            return
+        fi
+    fi
+    # List interfaces
+    echo -e "${CYAN}Available network interfaces:${NC}"
+    interfaces=($(ls /sys/class/net | grep -v lo))
+    select iface in "${interfaces[@]}" "Cancel"; do
+        if [[ "$iface" == "Cancel" ]]; then
+            return
+        elif [[ -n "$iface" ]]; then
+            break
+        else
+            error_msg "Invalid selection. Try again."
+        fi
+    done
+    echo
+    echo -e "${YELLOW}Select bandwidth limit (down/up):${NC}"
+    echo "1.  50 Mbit/s"
+    echo "2. 100 Mbit/s"
+    echo "3.   1 Gbit/s"
+    echo "4.   2 Gbit/s"
+    echo "5.   5 Gbit/s"
+    echo "6.  10 Gbit/s"
+    echo "7. Custom value (Mbit/s)"
+    echo "8. Reset/Remove limit"
+    echo "9. Cancel"
+    read -p "Enter your choice [1-9]: " bw_choice
+    case $bw_choice in
+        1) rate=50 ;;
+        2) rate=100 ;;
+        3) rate=1000 ;;
+        4) rate=2000 ;;
+        5) rate=5000 ;;
+        6) rate=10000 ;;
+        7)
+            read -p "Enter custom bandwidth in Mbit/s: " rate
+            if ! [[ $rate =~ ^[0-9]+$ ]]; then
+                error_msg "Invalid value."
+                return
+            fi
+            ;;
+        8)
+            wondershaper clear $iface
+            success_msg "Bandwidth limit reset for $iface."
+            return
+            ;;
+        9) return ;;
+        *) error_msg "Invalid option."; return ;;
+    esac
+    # Apply limit
+    wondershaper -a $iface -d $rate -u $rate
+    if [ $? -eq 0 ]; then
+        success_msg "Bandwidth limited to $rate Mbit/s (up/down) on $iface."
+    else
+        error_msg "Failed to set bandwidth limit."
+    fi
 }
 
 # System Diagnostics Functions
@@ -1471,6 +1543,7 @@ while true; do
                     [Bb]) show_live_stats ;;
                     [Cc]) generate_report ;;
                     [Dd]) run_diagnostics ;;
+                    [Ff]) limit_bandwidth ;;
                     [Ee]) break ;;
                     *) error_msg "Invalid advanced option" ;;
                 esac
