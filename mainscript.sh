@@ -242,6 +242,25 @@ warning_msg() {
     echo -e "⚠${NC}"
 }
 
+# Function to display human-readable bytes
+human_readable_bytes() {
+    local bytes=$1
+    if ! [[ "$bytes" =~ ^[0-9]+$ ]] || [[ "$bytes" -ge 18446744073709551615 ]]; then
+        echo "Unlimited"
+        return
+    fi
+
+    if (( bytes < 1024 )); then
+        echo "${bytes}B"
+    elif (( bytes < 1048576 )); then
+        printf "%.0fK\n" $((bytes/1024))
+    elif (( bytes < 1073741824 )); then
+        printf "%.0fM\n" $((bytes/1048576))
+    else
+        printf "%.1fG\n" $(echo "scale=1; $bytes/1073741824" | bc)
+    fi
+}
+
 # Must run as root
 if [ "$(id -u)" -ne 0 ]; then
     error_msg "This script must be run as root"
@@ -329,9 +348,9 @@ This is recommended for getting maximum performance from your hardware."
 configure_bbr() {
     local description="This will configure TCP congestion control with options:
 - BBR: Google's standard congestion control algorithm
-- BBR2: Newer version with improved performance
-- BBRplus: Enhanced version with additional features
-- BBRv2: Latest version with better congestion handling
+- BBR2: Newer version of BBR
+- BBRplus: BBR with additional features
+- BBRv2: BBR version 2
 
 This is recommended for optimizing network throughput."
 
@@ -968,64 +987,24 @@ show_system_status() {
     
     # Resource Limits Status (cgroups)
     echo -e "\n${CYAN}╭───────────── Resource Limits Status ────────────────╮${NC}"
-    if [ -d "/sys/fs/cgroup" ]; then
-        echo -e "${CYAN}│${NC} ✅ ${GREEN}cgroup v2 is active${NC}"
+    if command -v systemctl &> /dev/null; then
+        echo -e "${CYAN}│${NC} ✅ ${GREEN}systemd slice limits are active${NC}"
         
-        # Check for SNARE OPTIZ cgroups
-        snare_cgroups=0
-        if [ -d "/sys/fs/cgroup/snareoptiz" ]; then
-            for cgroup in /sys/fs/cgroup/snareoptiz/*; do
-                if [ -d "$cgroup" ] && [ "$(basename "$cgroup")" != "snareoptiz" ]; then
-                    ((snare_cgroups++))
-                    cgroup_name=$(basename "$cgroup")
-                    
-                    # Get CPU usage
-                    cpu_usage="N/A"
-                    if [ -f "$cgroup/cpu.stat" ]; then
-                        cpu_usage=$(cat "$cgroup/cpu.stat" 2>/dev/null | grep "usage_usec" | awk '{print $2/1000000 "s"}' || echo "N/A")
-                    fi
-                    
-                    # Get memory usage
-                    mem_usage="N/A"
-                    if [ -f "$cgroup/memory.current" ]; then
-                        mem_usage=$(cat "$cgroup/memory.current" 2>/dev/null | awk '{print $1/1024/1024 "MB"}' || echo "N/A")
-                    fi
-                    
-                    # Get memory limit
-                    mem_limit="N/A"
-                    if [ -f "$cgroup/memory.max" ]; then
-                        mem_limit=$(cat "$cgroup/memory.max" 2>/dev/null | awk '{print $1/1024/1024 "MB"}' || echo "N/A")
-                    fi
-                    
-                    # Get number of processes
-                    num_procs="0"
-                    if [ -f "$cgroup/cgroup.procs" ]; then
-                        num_procs=$(wc -l < "$cgroup/cgroup.procs" 2>/dev/null || echo "0")
-                    fi
-                    
-                    # Get CPU limit
-                    cpu_limit="N/A"
-                    if [ -f "$cgroup/cpu.max" ]; then
-                        cpu_limit_raw=$(cat "$cgroup/cpu.max" 2>/dev/null)
-                        if [ -n "$cpu_limit_raw" ]; then
-                            cpu_limit=$(echo "$cpu_limit_raw" | awk '{print int($1*100/1000000) "%"}')
-                        fi
-                    fi
-                    
-                    echo -e "${CYAN}│${NC} 📊 ${GREEN}Group:${NC} $cgroup_name"
-                    echo -e "${CYAN}│${NC}    ├─ CPU Limit: $cpu_limit"
-                    echo -e "${CYAN}│${NC}    ├─ CPU Usage: $cpu_usage"
-                    echo -e "${CYAN}│${NC}    ├─ Memory: $mem_usage / $mem_limit"
-                    echo -e "${CYAN}│${NC}    └─ Processes: $num_procs"
-                fi
-            done
-        fi
+        local system_cpu_quota=$(systemctl show system.slice -p CPUQuota --value)
+        local system_mem_max=$(systemctl show system.slice -p MemoryMax --value)
         
-        if [ $snare_cgroups -eq 0 ]; then
-            echo -e "${CYAN}│${NC} ℹ️ ${YELLOW}No active resource limits${NC}"
-        fi
+        local user_cpu_quota=$(systemctl show user.slice -p CPUQuota --value)
+        local user_mem_max=$(systemctl show user.slice -p MemoryMax --value)
+
+        echo -e "${CYAN}│${NC} 📊 ${GREEN}system.slice:${NC}"
+        echo -e "${CYAN}│${NC}    ├─ CPU Quota: ${system_cpu_quota:-Not Set}"
+        echo -e "${CYAN}│${NC}    └─ Memory Max: $(human_readable_bytes ${system_mem_max:-0})"
+        
+        echo -e "${CYAN}│${NC} 📊 ${GREEN}user.slice:${NC}"
+        echo -e "${CYAN}│${NC}    ├─ CPU Quota: ${user_cpu_quota:-Not Set}"
+        echo -e "${CYAN}│${NC}    └─ Memory Max: $(human_readable_bytes ${user_mem_max:-0})"
     else
-        echo -e "${CYAN}│${NC} ❌ ${RED}cgroup v2 is not mounted${NC}"
+        echo -e "${CYAN}│${NC} ℹ️ ${YELLOW}systemd not found, cannot check slice limits.${NC}"
     fi
     echo -e "${CYAN}╰─────────────────────────────────────────────────╯${NC}"
 
@@ -1518,24 +1497,15 @@ check_critical_services() {
 
 check_cpu_limits() {
     echo -e "\n${GREEN}[6/6] Checking CPU Limits...${NC}"
-    if [ -f "/var/run/cpu_limit_status" ]; then
-        source /var/run/cpu_limit_status
-        echo -e "${GREEN}✓ CPU Limiting is active${NC}"
-        echo -e "   Type: $TYPE"
-        echo -e "   Limit: $LIMIT%"
-        
-        if [[ "$TYPE" == "System-wide Limit" ]]; then
-            if systemctl is-active --quiet system-resource-limit.service; then
-                echo -e "${GREEN}✓ System-wide CPU limit service is running${NC}"
-            else
-                echo -e "${RED}⚠ System-wide CPU limit service is not running${NC}"
-            fi
-        elif pgrep cpulimit >/dev/null; then
-            echo -e "${GREEN}✓ Process-specific CPU limits are active${NC}"
-            echo -e "   Active limits: $(pgrep cpulimit | wc -l)"
+    if command -v systemctl &> /dev/null; then
+        local system_cpu_quota=$(systemctl show system.slice -p CPUQuota --value)
+        if [[ -n "$system_cpu_quota" && "$system_cpu_quota" != "0" ]]; then
+             echo -e "${GREEN}✓ CPU Limiting is active on system.slice: ${system_cpu_quota}${NC}"
+        else
+             echo -e "${YELLOW}ℹ No CPU limits are currently active on system.slice${NC}"
         fi
     else
-        echo -e "${YELLOW}ℹ No CPU limits are currently active${NC}"
+        echo -e "${YELLOW}ℹ systemd not found, cannot check CPU limits.${NC}"
     fi
 }
 
@@ -2253,122 +2223,82 @@ limit_cpu_usage() {
                 return
             fi
             
-            echo -ne "${GREEN}Enter system-wide memory limit in GB${NC} ${YELLOW}[default: 75% of total]${NC}: "
+            echo -ne "${GREEN}Enter system-wide memory limit in GB${NC} ${YELLOW}[e.g., 4 or 8, press Enter for no limit]${NC}: "
             read mem_limit
-            
-            if [ -z "$mem_limit" ]; then
-                total_mem=$(free -g | awk '/^Mem:/{print int($2 * 0.75)}' 2>/dev/null || echo "4")
-                mem_limit=$total_mem
-            fi
-            
-            # Initialize cgroup v2
-            if ! check_cgroup_v2; then
-                error_msg "Failed to initialize cgroup v2"
-                return 1
-            fi
-            
-            # Create system-wide cgroup
-            local system_cgroup="/sys/fs/cgroup/snareoptiz/system"
-            if [ -d "$system_cgroup" ]; then
-                # Move processes back to root before removing
-                echo "" > "$system_cgroup/cgroup.procs" 2>/dev/null
-                rmdir "$system_cgroup" 2>/dev/null
-            fi
-            
-            # Create new system cgroup
-            if ! mkdir -p "$system_cgroup"; then
-                error_msg "Failed to create system cgroup"
-                return 1
-            fi
-            
-            # Enable controllers
-            echo "+cpu +memory" > "$system_cgroup/cgroup.subtree_control"
-            
-            # Set CPU limit
-            local max_usec=$((1000000 * cpu_limit / 100))
-            if ! echo "$max_usec 1000000" > "$system_cgroup/cpu.max"; then
-                error_msg "Failed to set CPU limit"
-                return 1
-            fi
-            
-            # Set memory limit
-            if ! echo "$((mem_limit * 1024 * 1024 * 1024))" > "$system_cgroup/memory.max"; then
-                error_msg "Failed to set memory limit"
-                return 1
-            fi
-            
-            # Move all processes except kernel processes to the cgroup
-            for pid in $(ps -eo pid --no-headers 2>/dev/null); do
-                if [ $pid -ne 1 ] && [ $pid -ne $$ ] && [ -d "/proc/$pid" ]; then
-                    echo "$pid" > "$system_cgroup/cgroup.procs" 2>/dev/null
-                fi
-            done
-            
-            success_msg "System-wide resource limits applied"
-            
-            # Create systemd service to maintain limits across reboots
-            cat > /etc/systemd/system/system-resource-limit.service << EOF
-[Unit]
-Description=System Resource Limits
-After=network.target
 
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/bash -c 'mkdir -p /sys/fs/cgroup/snareoptiz/system && echo "+cpu +memory" > /sys/fs/cgroup/snareoptiz/system/cgroup.subtree_control && echo "$max_usec 1000000" > /sys/fs/cgroup/snareoptiz/system/cpu.max && echo "$((mem_limit * 1024 * 1024 * 1024))" > /sys/fs/cgroup/snareoptiz/system/memory.max && for pid in \$(ps -eo pid --no-headers 2>/dev/null); do if [ \$pid -ne 1 ] && [ -d "/proc/\$pid" ]; then echo "\$pid" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs 2>/dev/null; fi; done'
-ExecStop=/bin/bash -c 'echo "" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs; rmdir /sys/fs/cgroup/snareoptiz/system'
+            if [ -n "$mem_limit" ] && ! [[ $mem_limit =~ ^[0-9]+$ ]]; then
+                error_msg "Invalid memory limit"
+                return
+            fi
 
-[Install]
-WantedBy=multi-user.target
-EOF
+            info_msg "Applying system-wide resource limits using systemd slices..."
 
-            systemctl daemon-reload
-            systemctl enable --now system-resource-limit.service
+            # Apply CPU limit
+            systemctl set-property system.slice CPUQuota="${cpu_limit}%"
+            systemctl set-property user.slice CPUQuota="${cpu_limit}%"
+            success_msg "Set CPUQuota to ${cpu_limit}% for system.slice and user.slice"
+
+            # Apply Memory limit
+            if [ -n "$mem_limit" ]; then
+                systemctl set-property system.slice MemoryMax="${mem_limit}G"
+                systemctl set-property user.slice MemoryMax="${mem_limit}G"
+                success_msg "Set MemoryMax to ${mem_limit}G for system.slice and user.slice"
+            else
+                # Unset memory limit if user wants no limit
+                systemctl set-property system.slice MemoryMax=""
+                systemctl set-property user.slice MemoryMax=""
+                info_msg "Removed memory limits for system.slice and user.slice"
+            fi
             
-            success_msg "System-wide resource limits will persist across reboots"
+            # Delete old service if it exists
+            if systemctl --all --type=service | grep -q "system-resource-limit.service"; then
+                systemctl stop system-resource-limit.service
+                systemctl disable system-resource-limit.service
+                rm -f /etc/systemd/system/system-resource-limit.service
+                systemctl daemon-reload
+                info_msg "Removed old system-resource-limit.service"
+            fi
+
+            success_msg "System-wide resource limits applied and will persist across reboots."
             ;;
             
         5)  # Remove Resource Limits
-            echo -e "\n${CYAN}╭───────────── Remove Resource Limits ────────────╮${NC}"
-            echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Remove process-specific limits"
-            echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Remove system-wide limits"
-            echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Remove all limits"
-            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+            info_msg "Removing all system-wide resource limits..."
+
+            # Unset CPU Quota
+            systemctl set-property system.slice CPUQuota=""
+            systemctl set-property user.slice CPUQuota=""
+            success_msg "Removed CPUQuota from system.slice and user.slice"
             
-            echo -ne "\n${GREEN}Select option${NC} ${YELLOW}[1-3]${NC}: "
-            read remove_option
-            
-            case $remove_option in
-                1)
-                    for cgroup in /sys/fs/cgroup/snareoptiz/proc_*; do
-                        if [ -d "$cgroup" ]; then
-                            echo "" > "$cgroup/cgroup.procs" 2>/dev/null
-                            rmdir "$cgroup" 2>/dev/null
-                        fi
-                    done
-                    success_msg "Process-specific resource limits removed"
-                    ;;
-                2)
-                    if [ -d "/sys/fs/cgroup/snareoptiz/system" ]; then
-                        echo "" > "/sys/fs/cgroup/snareoptiz/system/cgroup.procs"
-                        rmdir "/sys/fs/cgroup/snareoptiz/system"
+            # Unset Memory Max
+            systemctl set-property system.slice MemoryMax=""
+            systemctl set-property user.slice MemoryMax=""
+            success_msg "Removed MemoryMax from system.slice and user.slice"
+
+            # Also remove custom cgroups from previous versions of the script
+            for cgroup in /sys/fs/cgroup/snareoptiz/*; do
+                if [ -d "$cgroup" ] && [ "$(basename "$cgroup")" != "snareoptiz" ]; then
+                    # Move processes out before removing cgroup
+                    if [ -f "$cgroup/cgroup.procs" ]; then
+                       cat "$cgroup/cgroup.procs" | while read -r pid; do
+                           echo "$pid" > /sys/fs/cgroup/cgroup.procs 2>/dev/null
+                       done
                     fi
-                    success_msg "System-wide resource limits removed"
-                    ;;
-                3)
-                    for cgroup in /sys/fs/cgroup/snareoptiz/*; do
-                        if [ -d "$cgroup" ] && [ "$(basename "$cgroup")" != "snareoptiz" ]; then
-                            echo "" > "$cgroup/cgroup.procs" 2>/dev/null
-                            rmdir "$cgroup" 2>/dev/null
-                        fi
-                    done
-                    success_msg "All resource limits removed"
-                    ;;
-                *)
-                    error_msg "Invalid option"
-                    return
-                    ;;
-            esac
+                    rmdir "$cgroup" 2>/dev/null
+                fi
+            done
+            info_msg "Cleaned up old custom cgroups."
+            
+            # Delete old service if it exists
+            if systemctl --all --type=service | grep -q "system-resource-limit.service"; then
+                systemctl stop system-resource-limit.service
+                systemctl disable system-resource-limit.service
+                rm -f /etc/systemd/system/system-resource-limit.service
+                systemctl daemon-reload
+                info_msg "Removed old system-resource-limit.service"
+            fi
+
+            success_msg "All system-wide resource limits have been removed."
             ;;
             
         6)  # Return to menu
