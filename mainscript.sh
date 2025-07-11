@@ -1201,11 +1201,14 @@ show_advanced_menu() {
     echo -e "${CYAN}│${NC}  ${GREEN}[F]${NC} 🌐 Network Bandwidth Limiter                                                 ${CYAN}│${NC}"
     echo -e "${CYAN}│${NC}      ${DIM}└─ Control and limit network bandwidth using wondershaper${NC}                ${CYAN}│${NC}"
     echo -e "${CYAN}│${NC}                                                                              ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${GREEN}[G]${NC} 💻 CPU Usage Limiter ${PURPLE}[NEW!]${NC}                                                ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}      ${DIM}└─ Control and limit CPU usage per process or system-wide${NC}               ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}                                                                              ${CYAN}│${NC}"
     echo -e "${CYAN}├$(printf '─%.0s' $(seq 1 $width))┤${NC}"
     echo -e "${CYAN}│${NC}  ${RED}[X]${NC} ⬅️  Return to Main Menu                                                       ${CYAN}│${NC}"
     echo -e "${CYAN}╰$(printf '═%.0s' $(seq 1 $width))╯${NC}"
     echo
-    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[A/B/C/D/F/X]${NC}: "
+    echo -ne "${GREEN}Choose an option${NC} ${YELLOW}[A/B/C/D/F/G/X]${NC}: "
 }
 
 limit_bandwidth() {
@@ -1717,6 +1720,7 @@ while true; do
                     C) generate_report ;;
                     D) run_diagnostics ;;
                     F) limit_bandwidth ;;
+                    G) limit_cpu_usage ;;
                     X|Q) break ;;
                     *) error_msg "Invalid advanced option" ;;
                 esac
