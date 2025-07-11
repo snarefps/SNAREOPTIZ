@@ -1525,7 +1525,7 @@ check_cpu_limits() {
         echo -e "   Limit: $LIMIT%"
         
         if [[ "$TYPE" == "System-wide Limit" ]]; then
-            if systemctl is-active --quiet system-cpu-limit.service; then
+            if systemctl is-active --quiet system-resource-limit.service; then
                 echo -e "${GREEN}✓ System-wide CPU limit service is running${NC}"
             else
                 echo -e "${RED}⚠ System-wide CPU limit service is not running${NC}"
