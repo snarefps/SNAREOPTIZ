@@ -973,21 +973,53 @@ show_system_status() {
         
         # Check for SNARE OPTIZ cgroups
         snare_cgroups=0
-        for cgroup in /sys/fs/cgroup/snareoptiz_*; do
-            if [ -d "$cgroup" ]; then
-                ((snare_cgroups++))
-                cgroup_name=$(basename "$cgroup")
-                cpu_usage=$(cat "$cgroup/cpu.stat" 2>/dev/null | grep "usage_usec" | awk '{print $2/1000000 "s"}')
-                mem_usage=$(cat "$cgroup/memory.current" 2>/dev/null | awk '{print $1/1024/1024 "MB"}')
-                mem_limit=$(cat "$cgroup/memory.max" 2>/dev/null | awk '{print $1/1024/1024 "MB"}')
-                num_procs=$(wc -l < "$cgroup/cgroup.procs" 2>/dev/null || echo 0)
-                
-                echo -e "${CYAN}│${NC} 📊 ${GREEN}Group:${NC} $cgroup_name"
-                echo -e "${CYAN}│${NC}    ├─ CPU Usage: $cpu_usage"
-                echo -e "${CYAN}│${NC}    ├─ Memory: $mem_usage / $mem_limit"
-                echo -e "${CYAN}│${NC}    └─ Processes: $num_procs"
-            fi
-        done
+        if [ -d "/sys/fs/cgroup/snareoptiz" ]; then
+            for cgroup in /sys/fs/cgroup/snareoptiz/*; do
+                if [ -d "$cgroup" ] && [ "$(basename "$cgroup")" != "snareoptiz" ]; then
+                    ((snare_cgroups++))
+                    cgroup_name=$(basename "$cgroup")
+                    
+                    # Get CPU usage
+                    cpu_usage="N/A"
+                    if [ -f "$cgroup/cpu.stat" ]; then
+                        cpu_usage=$(cat "$cgroup/cpu.stat" 2>/dev/null | grep "usage_usec" | awk '{print $2/1000000 "s"}' || echo "N/A")
+                    fi
+                    
+                    # Get memory usage
+                    mem_usage="N/A"
+                    if [ -f "$cgroup/memory.current" ]; then
+                        mem_usage=$(cat "$cgroup/memory.current" 2>/dev/null | awk '{print $1/1024/1024 "MB"}' || echo "N/A")
+                    fi
+                    
+                    # Get memory limit
+                    mem_limit="N/A"
+                    if [ -f "$cgroup/memory.max" ]; then
+                        mem_limit=$(cat "$cgroup/memory.max" 2>/dev/null | awk '{print $1/1024/1024 "MB"}' || echo "N/A")
+                    fi
+                    
+                    # Get number of processes
+                    num_procs="0"
+                    if [ -f "$cgroup/cgroup.procs" ]; then
+                        num_procs=$(wc -l < "$cgroup/cgroup.procs" 2>/dev/null || echo "0")
+                    fi
+                    
+                    # Get CPU limit
+                    cpu_limit="N/A"
+                    if [ -f "$cgroup/cpu.max" ]; then
+                        cpu_limit_raw=$(cat "$cgroup/cpu.max" 2>/dev/null)
+                        if [ -n "$cpu_limit_raw" ]; then
+                            cpu_limit=$(echo "$cpu_limit_raw" | awk '{print int($1*100/1000000) "%"}')
+                        fi
+                    fi
+                    
+                    echo -e "${CYAN}│${NC} 📊 ${GREEN}Group:${NC} $cgroup_name"
+                    echo -e "${CYAN}│${NC}    ├─ CPU Limit: $cpu_limit"
+                    echo -e "${CYAN}│${NC}    ├─ CPU Usage: $cpu_usage"
+                    echo -e "${CYAN}│${NC}    ├─ Memory: $mem_usage / $mem_limit"
+                    echo -e "${CYAN}│${NC}    └─ Processes: $num_procs"
+                fi
+            done
+        fi
         
         if [ $snare_cgroups -eq 0 ]; then
             echo -e "${CYAN}│${NC} ℹ️ ${YELLOW}No active resource limits${NC}"
