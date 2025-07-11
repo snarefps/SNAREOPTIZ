@@ -785,9 +785,9 @@ This is recommended for servers that use SSH tunneling extensively."
         cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
         success_msg "Original SSH config backed up to /etc/ssh/sshd_config.bak"
 
-        # Update SSH configuration
-        cat >> /etc/ssh/sshd_config << EOF
-
+        # Define the settings to apply
+        local settings_block
+        settings_block=$(cat <<EOF
 # SSH Tunnel Optimization
 ClientAliveInterval 60
 ClientAliveCountMax 3
@@ -796,11 +796,31 @@ Compression yes
 MaxSessions 100
 UseDNS no
 EOF
-        success_msg "SSH optimized for better tunnel performance"
+)
+
+        # Remove any previous settings managed by this script to avoid duplication
+        sed -i -E '/^# SSH Tunnel Optimization/d' /etc/ssh/sshd_config
+        sed -i -E '/^ClientAliveInterval/d' /etc/ssh/sshd_config
+        sed -i -E '/^ClientAliveCountMax/d' /etc/ssh/sshd_config
+        sed -i -E '/^TCPKeepAlive/d' /etc/ssh/sshd_config
+        sed -i -E '/^Compression/d' /etc/ssh/sshd_config
+        sed -i -E '/^MaxSessions/d' /etc/ssh/sshd_config
+        sed -i -E '/^UseDNS/d' /etc/ssh/sshd_config
+
+        # Prepend the new settings to the top of the file, which is safe for global directives
+        echo -e "$settings_block\n$(cat /etc/ssh/sshd_config)" > /etc/ssh/sshd_config
         
-        # Restart SSH service
-        systemctl restart sshd
-        success_msg "SSH service restarted with new settings"
+        success_msg "SSH settings updated. Testing configuration..."
+
+        # Test the new config and restart if valid
+        if sshd -t; then
+            systemctl restart ssh
+            success_msg "SSH service restarted with new settings."
+        else
+            error_msg "New SSH configuration is invalid. Reverting to backup."
+            cp /etc/ssh/sshd_config.bak /etc/ssh/sshd_config
+            systemctl restart ssh
+        fi
         
         show_progress 1
         success_msg "SSH optimization completed"
