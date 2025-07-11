@@ -1805,6 +1805,61 @@ check_cgroup_v2() {
     return 0
 }
 
+# Function to find all related processes
+find_related_processes() {
+    local search_term=$1
+    local pids=""
+    
+    # Find all processes matching the search term
+    pids=$(ps -ef | grep "$search_term" | grep -v "grep" | awk '{print $2}')
+    
+    # Find child processes
+    for pid in $pids; do
+        pids="$pids $(pgrep -P $pid)"
+    done
+    
+    echo "$pids"
+}
+
+# Function to create service cgroup
+create_service_cgroup() {
+    local service_name=$1
+    local cpu_limit=$2
+    local mem_limit=$3
+    local path="/sys/fs/cgroup/snareoptiz/service_${service_name}"
+    
+    # Create base cgroup
+    if ! mkdir -p "$path" 2>/dev/null; then
+        error_msg "Failed to create service cgroup"
+        return 1
+    fi
+    
+    # Enable controllers
+    echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null
+    
+    # Set CPU limit (percentage to microseconds)
+    local max_usec=$((1000000 * cpu_limit / 100))
+    echo "$max_usec 1000000" > "$path/cpu.max"
+    
+    # Set memory limit (in bytes)
+    if [ -n "$mem_limit" ]; then
+        echo "$((mem_limit * 1024 * 1024 * 1024))" > "$path/memory.max"
+    fi
+    
+    # Find and add all related processes
+    local pids=$(find_related_processes "$service_name")
+    for pid in $pids; do
+        echo "$pid" > "$path/cgroup.procs" 2>/dev/null
+    done
+    
+    success_msg "Service '$service_name' limited to ${cpu_limit}% CPU"
+    if [ -n "$mem_limit" ]; then
+        success_msg "Memory limit set to ${mem_limit}GB"
+    fi
+    
+    return 0
+}
+
 # Function to create cgroup
 create_cgroup() {
     local name=$1
@@ -1892,23 +1947,23 @@ limit_cpu_usage() {
     fi
     
     # Show profile options with cgroups
-    echo -e "${CYAN}╭───────────── CPU Limiting Profiles (cgroups) ────────────╮${NC}"
-    echo -e "${CYAN}│${NC} 🖥️  ${GREEN}Select CPU limiting profile:${NC}"
+    echo -e "${CYAN}╭───────────── Resource Control (cgroups) ────────────╮${NC}"
+    echo -e "${CYAN}│${NC} 🖥️  ${GREEN}Select resource control option:${NC}"
     echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Highload Profiles (cgroups):"
-    echo -e "${CYAN}│${NC}    ├─ 1-24 vCPU support"
-    echo -e "${CYAN}│${NC}    ├─ Advanced resource control"
-    echo -e "${CYAN}│${NC}    ├─ Memory limits included"
-    echo -e "${CYAN}│${NC}    └─ Precise CPU allocation"
+    echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Service/Group Control:"
+    echo -e "${CYAN}│${NC}    ├─ Limit entire service/process group"
+    echo -e "${CYAN}│${NC}    ├─ Automatic process detection"
+    echo -e "${CYAN}│${NC}    ├─ Dynamic resource allocation"
+    echo -e "${CYAN}│${NC}    └─ Includes child processes"
     echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Burstable Profiles (cgroups):"
-    echo -e "${CYAN}│${NC}    ├─ Flexible CPU limits"
-    echo -e "${CYAN}│${NC}    ├─ Fair resource sharing"
-    echo -e "${CYAN}│${NC}    ├─ Memory protection"
-    echo -e "${CYAN}│${NC}    └─ Automatic throttling"
+    echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Workload Profiles:"
+    echo -e "${CYAN}│${NC}    ├─ Predefined resource limits"
+    echo -e "${CYAN}│${NC}    ├─ Optimized for common scenarios"
+    echo -e "${CYAN}│${NC}    ├─ Balanced resource distribution"
+    echo -e "${CYAN}│${NC}    └─ Automatic adjustment"
     echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Process Group Control"
-    echo -e "${CYAN}│${NC} ${GREEN}[4]${NC} System-wide Resource Control"
+    echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Custom Resource Control"
+    echo -e "${CYAN}│${NC} ${GREEN}[4]${NC} System Protection Limits"
     echo -e "${CYAN}│${NC} ${GREEN}[5]${NC} Remove Resource Limits"
     echo -e "${CYAN}│${NC} ${RED}[6]${NC} Return to Menu"
     echo -e "${CYAN}╰──────────────────────────────────────────────────────╯${NC}"
@@ -1917,37 +1972,62 @@ limit_cpu_usage() {
     read profile_choice
     
     case $profile_choice in
-        1)  # Highload Profile
-            echo -e "\n${CYAN}╭───────────── Highload Profile ────────────────╮${NC}"
-            echo -e "${CYAN}│${NC} ${GREEN}Select vCPU limit:${NC}"
-            echo -e "${CYAN}│${NC} [1] 1 vCPU  (100%)"
-            echo -e "${CYAN}│${NC} [2] 2 vCPU  (200%)"
-            echo -e "${CYAN}│${NC} [4] 4 vCPU  (400%)"
-            echo -e "${CYAN}│${NC} [8] 8 vCPU  (800%)"
-            echo -e "${CYAN}│${NC} [16] 16 vCPU (1600%)"
-            echo -e "${CYAN}│${NC} [24] 24 vCPU (2400%)"
-            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+        1)  # Service/Group Control
+            echo -e "\n${CYAN}╭───────────── Service/Group Control ────────────────╮${NC}"
+            echo -e "${CYAN}│${NC} ${GREEN}Running Services/Processes:${NC}"
             
-            echo -ne "\n${GREEN}Select vCPU limit${NC} ${YELLOW}[1/2/4/8/16/24]${NC}: "
-            read vcpu_limit
+            # Show running services if systemd is available
+            if command -v systemctl >/dev/null 2>&1; then
+                echo -e "${CYAN}│${NC} ${YELLOW}Active Services:${NC}"
+                systemctl list-units --type=service --state=running | grep ".service" | head -n 5 | \
+                    awk '{print "│ " NR ") " $1 " (" $4 ")"}'
+            fi
             
-            if [[ ! $vcpu_limit =~ ^(1|2|4|8|16|24)$ ]]; then
-                error_msg "Invalid vCPU selection"
+            # Show top CPU consuming processes
+            echo -e "${CYAN}│${NC} ${YELLOW}Top CPU Processes:${NC}"
+            ps -eo comm,pid,ppid,pcpu --sort=-pcpu | head -n 6 | tail -n 5 | \
+                awk '{printf "│ %d) %s (PID: %s, CPU: %.1f%%)\n", NR, $1, $2, $4}'
+            
+            echo -e "${CYAN}╰──────────────────────────────────────────────────────╯${NC}"
+            
+            # Get service/process name
+            echo -ne "\n${GREEN}Enter service/process name to limit${NC}: "
+            read service_name
+            
+            if [ -z "$service_name" ]; then
+                error_msg "Service/process name cannot be empty"
                 return
             fi
             
-            # Create cgroup for highload profile
-            cgroup_path=$(create_cgroup "highload")
-            set_cgroup_cpu_limit "$cgroup_path" $((vcpu_limit * 100))
+            # Get CPU limit
+            echo -ne "${GREEN}Enter CPU limit percentage${NC} ${YELLOW}[1-400]${NC}: "
+            read cpu_limit
             
-            # Set memory limit (4GB per vCPU)
-            echo "$((4 * 1024 * 1024 * 1024 * vcpu_limit))" > "$cgroup_path/memory.max"
+            if ! [[ $cpu_limit =~ ^[0-9]+$ ]] || [ $cpu_limit -lt 1 ] || [ $cpu_limit -gt 400 ]; then
+                error_msg "Invalid CPU limit (must be between 1 and 400)"
+                return
+            fi
             
-            # Add current shell to cgroup
-            add_to_cgroup "$cgroup_path" "$$"
+            # Get memory limit (optional)
+            echo -ne "${GREEN}Enter memory limit in GB (optional)${NC} ${YELLOW}[Enter to skip]${NC}: "
+            read mem_limit
             
-            cpu_limit=$((vcpu_limit * 100))
-            success_msg "Highload profile activated with $vcpu_limit vCPUs"
+            if [ -n "$mem_limit" ]; then
+                if ! [[ $mem_limit =~ ^[0-9]+$ ]] || [ $mem_limit -lt 1 ]; then
+                    error_msg "Invalid memory limit"
+                    return
+                fi
+            fi
+            
+            # Create service cgroup and apply limits
+            if create_service_cgroup "$service_name" "$cpu_limit" "$mem_limit"; then
+                success_msg "Resource limits applied to '$service_name'"
+                
+                # Show current resource usage
+                echo -e "\n${CYAN}Current Resource Usage:${NC}"
+                ps aux | grep "$service_name" | grep -v "grep" | \
+                    awk '{cpu+=$3; mem+=$4} END {print "CPU: " cpu "%, Memory: " mem "%"}'
+            fi
             ;;
             
         2)  # Burstable Profile
