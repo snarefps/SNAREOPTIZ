@@ -1761,11 +1761,6 @@ check_cgroup_v2() {
         # Mount cgroup2
         mkdir -p /sys/fs/cgroup
         mount -t cgroup2 none /sys/fs/cgroup
-
-        if ! mountpoint -q /sys/fs/cgroup; then
-            error_msg "Failed to mount cgroup2 filesystem"
-            return 1
-        fi
     fi
 
     # Verify it's cgroup v2 and not v1
@@ -1776,7 +1771,6 @@ check_cgroup_v2() {
 
     # Check and fix permissions
     if [ ! -w "/sys/fs/cgroup" ]; then
-        info_msg "Fixing cgroup filesystem permissions..."
         chmod 755 /sys/fs/cgroup
         if [ ! -w "/sys/fs/cgroup" ]; then
             error_msg "Cannot write to cgroup filesystem"
@@ -1794,10 +1788,17 @@ check_cgroup_v2() {
         fi
     fi
 
-    # Enable controllers
-    echo "+cpu +memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null
+    # Enable controllers in root cgroup first
+    echo "+cpu +memory" > /sys/fs/cgroup/cgroup.subtree_control
     if [ $? -ne 0 ]; then
-        error_msg "Failed to enable controllers. Is cgroup v2 properly set up?"
+        error_msg "Failed to enable controllers in root cgroup"
+        return 1
+    fi
+
+    # Enable controllers in base directory
+    echo "+cpu +memory" > "$base_dir/cgroup.subtree_control"
+    if [ $? -ne 0 ]; then
+        error_msg "Failed to enable controllers in base directory"
         return 1
     fi
 
@@ -1881,12 +1882,11 @@ create_cgroup() {
     # Set permissions
     chmod 755 "$path"
     
-    # Enable controllers
-    if ! echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null; then
-        error_msg "Failed to enable controllers for cgroup"
-        rmdir "$path" 2>/dev/null
-        return 1
-    fi
+    # Enable controllers in parent first
+    echo "+cpu +memory" > "/sys/fs/cgroup/snareoptiz/cgroup.subtree_control"
+    
+    # Enable controllers in new cgroup
+    echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null
     
     # Verify controllers are enabled
     if ! grep -q "cpu" "$path/cgroup.controllers" 2>/dev/null || \
@@ -1917,13 +1917,6 @@ set_cgroup_cpu_limit() {
     # Set CPU weight (default: 100, range: 1-10000)
     if ! echo "100" > "$path/cpu.weight" 2>/dev/null; then
         error_msg "Failed to set CPU weight"
-        return 1
-    fi
-    
-    # Verify settings
-    local current_max=$(cat "$path/cpu.max" 2>/dev/null | awk '{print $1}')
-    if [ "$current_max" != "$max_usec" ]; then
-        error_msg "CPU limit verification failed"
         return 1
     fi
     
@@ -2099,7 +2092,7 @@ limit_cpu_usage() {
             success_msg "Resource limits applied to PID $target_pid"
             ;;
             
-        4)  # System-wide Resource Control
+        4)  # System Protection Limits
             echo -ne "\n${GREEN}Enter system-wide CPU limit percentage${NC} ${YELLOW}[1-100]${NC}: "
             read cpu_limit
             
@@ -2116,19 +2109,71 @@ limit_cpu_usage() {
                 mem_limit=$total_mem
             fi
             
+            # Initialize cgroup v2
+            if ! check_cgroup_v2; then
+                error_msg "Failed to initialize cgroup v2"
+                return 1
+            fi
+            
             # Create system-wide cgroup
-            cgroup_path=$(create_cgroup "system")
-            set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
-            echo "$((mem_limit * 1024 * 1024 * 1024))" > "$cgroup_path/memory.max"
+            local system_cgroup="/sys/fs/cgroup/snareoptiz/system"
+            if [ -d "$system_cgroup" ]; then
+                # Move processes back to root before removing
+                echo "" > "$system_cgroup/cgroup.procs" 2>/dev/null
+                rmdir "$system_cgroup" 2>/dev/null
+            fi
+            
+            # Create new system cgroup
+            if ! mkdir -p "$system_cgroup"; then
+                error_msg "Failed to create system cgroup"
+                return 1
+            fi
+            
+            # Enable controllers
+            echo "+cpu +memory" > "$system_cgroup/cgroup.subtree_control"
+            
+            # Set CPU limit
+            local max_usec=$((1000000 * cpu_limit / 100))
+            if ! echo "$max_usec 1000000" > "$system_cgroup/cpu.max"; then
+                error_msg "Failed to set CPU limit"
+                return 1
+            fi
+            
+            # Set memory limit
+            if ! echo "$((mem_limit * 1024 * 1024 * 1024))" > "$system_cgroup/memory.max"; then
+                error_msg "Failed to set memory limit"
+                return 1
+            fi
             
             # Move all processes except kernel processes to the cgroup
             for pid in $(ps -eo pid --no-headers); do
-                if [ $pid -ne 1 ] && [ $pid -ne $$ ]; then
-                    add_to_cgroup "$cgroup_path" "$pid" 2>/dev/null
+                if [ $pid -ne 1 ] && [ $pid -ne $$ ] && [ -d "/proc/$pid" ]; then
+                    echo "$pid" > "$system_cgroup/cgroup.procs" 2>/dev/null
                 fi
             done
             
             success_msg "System-wide resource limits applied"
+            
+            # Create systemd service to maintain limits across reboots
+            cat > /etc/systemd/system/system-resource-limit.service << EOF
+[Unit]
+Description=System Resource Limits
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'mkdir -p /sys/fs/cgroup/snareoptiz/system && echo "+cpu +memory" > /sys/fs/cgroup/snareoptiz/system/cgroup.subtree_control && echo "$max_usec 1000000" > /sys/fs/cgroup/snareoptiz/system/cpu.max && echo "$((mem_limit * 1024 * 1024 * 1024))" > /sys/fs/cgroup/snareoptiz/system/memory.max && for pid in \$(ps -eo pid --no-headers); do if [ \$pid -ne 1 ] && [ -d "/proc/\$pid" ]; then echo "\$pid" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs 2>/dev/null; fi; done'
+ExecStop=/bin/bash -c 'echo "" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs; rmdir /sys/fs/cgroup/snareoptiz/system'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+            systemctl daemon-reload
+            systemctl enable --now system-resource-limit.service
+            
+            success_msg "System-wide resource limits will persist across reboots"
             ;;
             
         5)  # Remove Resource Limits
