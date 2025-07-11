@@ -2231,49 +2231,42 @@ limit_cpu_usage() {
                 return
             fi
 
-            info_msg "Applying system-wide resource limits using systemd slices..."
+            info_msg "Applying system-wide resource limits by creating systemd drop-in files..."
 
-            # Apply CPU limit
-            systemctl set-property system.slice CPUQuota="${cpu_limit}%"
-            systemctl set-property user.slice CPUQuota="${cpu_limit}%"
-            success_msg "Set CPUQuota to ${cpu_limit}% for system.slice and user.slice"
-
-            # Apply Memory limit
+            # Define drop-in file content
+            local drop_in_content="[Slice]\nCPUQuota=${cpu_limit}%\n"
             if [ -n "$mem_limit" ]; then
-                systemctl set-property system.slice MemoryMax="${mem_limit}G"
-                systemctl set-property user.slice MemoryMax="${mem_limit}G"
-                success_msg "Set MemoryMax to ${mem_limit}G for system.slice and user.slice"
-            else
-                # Unset memory limit if user wants no limit
-                systemctl set-property system.slice MemoryMax=""
-                systemctl set-property user.slice MemoryMax=""
-                info_msg "Removed memory limits for system.slice and user.slice"
-            fi
-            
-            # Delete old service if it exists
-            if systemctl --all --type=service | grep -q "system-resource-limit.service"; then
-                systemctl stop system-resource-limit.service
-                systemctl disable system-resource-limit.service
-                rm -f /etc/systemd/system/system-resource-limit.service
-                systemctl daemon-reload
-                info_msg "Removed old system-resource-limit.service"
+                drop_in_content+="MemoryMax=${mem_limit}G\n"
             fi
 
+            # Create drop-in files for system.slice and user.slice
+            mkdir -p /etc/systemd/system/system.slice.d
+            mkdir -p /etc/systemd/system/user.slice.d
+            echo -e "$drop_in_content" > /etc/systemd/system/system.slice.d/99-snare-optiz.conf
+            echo -e "$drop_in_content" > /etc/systemd/system/user.slice.d/99-snare-optiz.conf
+            
+            # Reload systemd and restart services to apply changes
+            systemctl daemon-reload
+            systemctl restart system.slice
+            systemctl restart user.slice
+            
             success_msg "System-wide resource limits applied and will persist across reboots."
+            info_msg "CPUQuota=${cpu_limit}% | MemoryMax=${mem_limit:-Unlimited}G"
             ;;
             
         5)  # Remove Resource Limits
             info_msg "Removing all system-wide resource limits..."
 
-            # Unset CPU Quota
-            systemctl set-property system.slice CPUQuota=""
-            systemctl set-property user.slice CPUQuota=""
-            success_msg "Removed CPUQuota from system.slice and user.slice"
+            # Remove drop-in files
+            rm -f /etc/systemd/system/system.slice.d/99-snare-optiz.conf
+            rm -f /etc/systemd/system/user.slice.d/99-snare-optiz.conf
+
+            # Reload systemd to unapply settings
+            systemctl daemon-reload
             
-            # Unset Memory Max
-            systemctl set-property system.slice MemoryMax=""
-            systemctl set-property user.slice MemoryMax=""
-            success_msg "Removed MemoryMax from system.slice and user.slice"
+            # Reset properties on the running system
+            systemctl set-property system.slice CPUQuota="" MemoryMax=""
+            systemctl set-property user.slice CPUQuota="" MemoryMax=""
 
             # Also remove custom cgroups from previous versions of the script
             for cgroup in /sys/fs/cgroup/snareoptiz/*; do
@@ -2310,37 +2303,6 @@ limit_cpu_usage() {
             return
             ;;
     esac
-    
-    # Show status after applying CPU limits
-    if [[ $profile_choice =~ ^[124]$ ]] && [[ -n $cpu_limit ]]; then
-        echo -e "\n${CYAN}╭───────────── CPU Limit Status ────────────────╮${NC}"
-        echo -e "${CYAN}│${NC} ${GREEN}✓ CPU Limit has been applied successfully${NC}"
-        echo -e "${CYAN}│${NC} ${GREEN}• Limit Type:${NC} $(case $profile_choice in
-            1) echo "Service/Group Control";;
-            2) echo "Burstable Profile";;
-            4) echo "System-wide Limit";;
-        esac)"
-        echo -e "${CYAN}│${NC} ${GREEN}• CPU Limit:${NC} ${cpu_limit}%"
-        
-        if [[ $profile_choice == "4" ]]; then
-            echo -e "${CYAN}│${NC} ${GREEN}• Service Status:${NC} $(systemctl is-active system-resource-limit.service 2>/dev/null || echo "Not running")"
-            echo -e "${CYAN}│${NC} ${YELLOW}Note: CPU limits will persist after system reboot${NC}"
-        else
-            echo -e "${CYAN}│${NC} ${YELLOW}Note: Use option 5 to remove limits if needed${NC}"
-        fi
-        echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
-        
-        # Save CPU limit info for system status
-        cat > /var/run/cpu_limit_status << EOF
-TYPE=$(case $profile_choice in
-    1) echo "Service/Group Control";;
-    2) echo "Burstable Profile";;
-    4) echo "System-wide Limit";;
-    *) echo "Process-specific";;
-esac)
-LIMIT=$cpu_limit
-EOF
-    fi
 }
 
 # Update main program loop
