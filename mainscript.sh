@@ -1732,46 +1732,147 @@ show_main_menu() {
     echo -e "${GREEN}Enter your choice${NC} ${YELLOW}[1-13]${NC}: "
 }
 
-# Function to check if cgroup v2 is available and mounted
+# Function to check and setup cgroup v2
 check_cgroup_v2() {
+    # Check if running as root
+    if [ "$(id -u)" -ne 0 ]; then
+        error_msg "This script must be run as root"
+        return 1
+    fi
+
+    # Check kernel support
     if ! grep -q "cgroup2" /proc/filesystems; then
         error_msg "cgroup v2 is not available in the kernel"
         return 1
     fi
-    
+
+    # Check if cgroup2 is mounted
     if ! mountpoint -q /sys/fs/cgroup; then
-        info_msg "Mounting cgroup v2 filesystem..."
+        info_msg "cgroup v2 not mounted. Attempting to mount..."
+        
+        # Try to unmount any existing cgroup mounts
+        if mount | grep -q "type cgroup "; then
+            info_msg "Unmounting legacy cgroup mounts..."
+            for m in $(mount | grep "type cgroup " | cut -d' ' -f3); do
+                umount $m 2>/dev/null
+            done
+        fi
+
+        # Mount cgroup2
+        mkdir -p /sys/fs/cgroup
         mount -t cgroup2 none /sys/fs/cgroup
+
+        if ! mountpoint -q /sys/fs/cgroup; then
+            error_msg "Failed to mount cgroup2 filesystem"
+            return 1
+        fi
     fi
-    
-    if [ ! -w "/sys/fs/cgroup" ]; then
-        error_msg "No write permission to cgroup filesystem"
+
+    # Verify it's cgroup v2 and not v1
+    if ! grep -q "cgroup2" /proc/mounts; then
+        error_msg "System is using cgroup v1. Please enable cgroup v2"
         return 1
     fi
-    
+
+    # Check and fix permissions
+    if [ ! -w "/sys/fs/cgroup" ]; then
+        info_msg "Fixing cgroup filesystem permissions..."
+        chmod 755 /sys/fs/cgroup
+        if [ ! -w "/sys/fs/cgroup" ]; then
+            error_msg "Cannot write to cgroup filesystem"
+            return 1
+        fi
+    fi
+
+    # Create base SNARE OPTIZ directory if it doesn't exist
+    local base_dir="/sys/fs/cgroup/snareoptiz"
+    if [ ! -d "$base_dir" ]; then
+        mkdir -p "$base_dir"
+        if [ ! -d "$base_dir" ]; then
+            error_msg "Failed to create base cgroup directory"
+            return 1
+        fi
+    fi
+
+    # Enable controllers
+    echo "+cpu +memory" > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null
+    if [ $? -ne 0 ]; then
+        error_msg "Failed to enable controllers. Is cgroup v2 properly set up?"
+        return 1
+    fi
+
+    success_msg "cgroup v2 is properly configured"
     return 0
 }
 
 # Function to create cgroup
 create_cgroup() {
     local name=$1
-    local path="/sys/fs/cgroup/snareoptiz_$name"
+    local path="/sys/fs/cgroup/snareoptiz/$name"
     
-    if [ ! -d "$path" ]; then
-        mkdir -p "$path"
+    # Check if directory exists and remove if necessary
+    if [ -d "$path" ]; then
+        info_msg "Removing existing cgroup..."
+        echo "" > "$path/cgroup.procs" 2>/dev/null
+        rmdir "$path" 2>/dev/null
     fi
-    echo "+cpu +memory" > "$path/cgroup.subtree_control"
+    
+    # Create new cgroup
+    if ! mkdir -p "$path" 2>/dev/null; then
+        error_msg "Failed to create cgroup directory: $path"
+        return 1
+    fi
+    
+    # Set permissions
+    chmod 755 "$path"
+    
+    # Enable controllers
+    if ! echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null; then
+        error_msg "Failed to enable controllers for cgroup"
+        rmdir "$path" 2>/dev/null
+        return 1
+    fi
+    
+    # Verify controllers are enabled
+    if ! grep -q "cpu" "$path/cgroup.controllers" 2>/dev/null || \
+       ! grep -q "memory" "$path/cgroup.controllers" 2>/dev/null; then
+        error_msg "Required controllers not available"
+        rmdir "$path" 2>/dev/null
+        return 1
+    fi
+    
     echo "$path"
+    return 0
 }
 
 # Function to set CPU limit using cgroups
 set_cgroup_cpu_limit() {
     local path=$1
     local cpu_limit=$2
+    
+    # Convert percentage to microseconds (1 second = 1000000 microseconds)
     local max_usec=$((1000000 * cpu_limit / 100))
     
-    echo "$max_usec" > "$path/cpu.max"
-    echo "100000" > "$path/cpu.weight"
+    # Set CPU limit with error checking
+    if ! echo "$max_usec 1000000" > "$path/cpu.max" 2>/dev/null; then
+        error_msg "Failed to set CPU limit"
+        return 1
+    fi
+    
+    # Set CPU weight (default: 100, range: 1-10000)
+    if ! echo "100" > "$path/cpu.weight" 2>/dev/null; then
+        error_msg "Failed to set CPU weight"
+        return 1
+    fi
+    
+    # Verify settings
+    local current_max=$(cat "$path/cpu.max" 2>/dev/null | awk '{print $1}')
+    if [ "$current_max" != "$max_usec" ]; then
+        error_msg "CPU limit verification failed"
+        return 1
+    fi
+    
+    return 0
 }
 
 # Function to add process to cgroup
