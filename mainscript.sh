@@ -1675,6 +1675,241 @@ show_main_menu() {
     echo -e "${GREEN}Enter your choice${NC} ${YELLOW}[1-13]${NC}: "
 }
 
+# Function to limit CPU usage
+limit_cpu_usage() {
+    section_header "CPU USAGE LIMITER"
+    
+    # Check and install cpulimit if needed
+    if ! command -v cpulimit &>/dev/null; then
+        info_msg "Installing cpulimit..."
+        if command -v apt-get &>/dev/null; then
+            apt-get update && apt-get install -y cpulimit
+        elif command -v yum &>/dev/null; then
+            yum install -y cpulimit
+        elif command -v dnf &>/dev/null; then
+            dnf install -y cpulimit
+        else
+            error_msg "Could not install cpulimit. Please install it manually."
+            return
+        fi
+    fi
+    
+    # Show profile options
+    echo -e "${CYAN}╭───────────── CPU Limiting Profiles ──────────────╮${NC}"
+    echo -e "${CYAN}│${NC} 🖥️  ${GREEN}Select CPU limiting profile:${NC}"
+    echo -e "${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Highload Profiles:"
+    echo -e "${CYAN}│${NC}    ├─ 1-24 vCPU"
+    echo -e "${CYAN}│${NC}    ├─ 4-96GB RAM"
+    echo -e "${CYAN}│${NC}    ├─ 100% CPU usage"
+    echo -e "${CYAN}│${NC}    └─ 100k-200k IOPS"
+    echo -e "${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Burstable Profiles:"
+    echo -e "${CYAN}│${NC}    ├─ 1-4 vCPU"
+    echo -e "${CYAN}│${NC}    ├─ 1-16GB RAM"
+    echo -e "${CYAN}│${NC}    ├─ 10-50% CPU usage"
+    echo -e "${CYAN}│${NC}    └─ 2k-10k IOPS"
+    echo -e "${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Process-specific limit"
+    echo -e "${CYAN}│${NC} ${GREEN}[4]${NC} System-wide limit"
+    echo -e "${CYAN}│${NC} ${GREEN}[5]${NC} Remove CPU limits"
+    echo -e "${CYAN}│${NC} ${RED}[6]${NC} Return to menu"
+    echo -e "${CYAN}╰──────────────────────────────────────────────────╯${NC}"
+    
+    echo -ne "\n${GREEN}Select profile${NC} ${YELLOW}[1-6]${NC}: "
+    read profile_choice
+    
+    case $profile_choice in
+        1)  # Highload Profile
+            echo -e "\n${CYAN}╭───────────── Highload Profile ────────────────╮${NC}"
+            echo -e "${CYAN}│${NC} ${GREEN}Select vCPU limit:${NC}"
+            echo -e "${CYAN}│${NC} [1] 1 vCPU  (100%)"
+            echo -e "${CYAN}│${NC} [2] 2 vCPU  (200%)"
+            echo -e "${CYAN}│${NC} [4] 4 vCPU  (400%)"
+            echo -e "${CYAN}│${NC} [8] 8 vCPU  (800%)"
+            echo -e "${CYAN}│${NC} [16] 16 vCPU (1600%)"
+            echo -e "${CYAN}│${NC} [24] 24 vCPU (2400%)"
+            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+            
+            echo -ne "\n${GREEN}Select vCPU limit${NC} ${YELLOW}[1/2/4/8/16/24]${NC}: "
+            read vcpu_limit
+            
+            if [[ ! $vcpu_limit =~ ^(1|2|4|8|16|24)$ ]]; then
+                error_msg "Invalid vCPU selection"
+                return
+            fi
+            
+            # Set CPU limit based on vCPU selection (100% per vCPU)
+            cpu_limit=$((vcpu_limit * 100))
+            ;;
+            
+        2)  # Burstable Profile
+            echo -e "\n${CYAN}╭───────────── Burstable Profile ───────────────╮${NC}"
+            echo -e "${CYAN}│${NC} ${GREEN}Select CPU limit:${NC}"
+            echo -e "${CYAN}│${NC} [1] 10% CPU usage"
+            echo -e "${CYAN}│${NC} [2] 20% CPU usage"
+            echo -e "${CYAN}│${NC} [3] 30% CPU usage"
+            echo -e "${CYAN}│${NC} [4] 40% CPU usage"
+            echo -e "${CYAN}│${NC} [5] 50% CPU usage"
+            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+            
+            echo -ne "\n${GREEN}Select option${NC} ${YELLOW}[1-5]${NC}: "
+            read burst_option
+            
+            case $burst_option in
+                1) cpu_limit=10 ;;
+                2) cpu_limit=20 ;;
+                3) cpu_limit=30 ;;
+                4) cpu_limit=40 ;;
+                5) cpu_limit=50 ;;
+                *) 
+                    error_msg "Invalid selection"
+                    return
+                    ;;
+            esac
+            ;;
+            
+        3)  # Process-specific limit
+            echo -e "\n${CYAN}╭───────────── Process Limit ──────────────────╮${NC}"
+            echo -e "${CYAN}│${NC} ${GREEN}Running Processes:${NC}"
+            ps aux | grep -v "PID" | awk '{print NR") "$11" (PID: "$2") - CPU: "$3"%"}' | head -n 10
+            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+            
+            echo -ne "\n${GREEN}Enter PID to limit${NC}: "
+            read target_pid
+            
+            if ! ps -p $target_pid > /dev/null; then
+                error_msg "Invalid PID"
+                return
+            fi
+            
+            echo -ne "${GREEN}Enter CPU limit percentage${NC} ${YELLOW}[1-100]${NC}: "
+            read cpu_limit
+            
+            if ! [[ $cpu_limit =~ ^[0-9]+$ ]] || [ $cpu_limit -lt 1 ] || [ $cpu_limit -gt 100 ]; then
+                error_msg "Invalid CPU limit"
+                return
+            fi
+            
+            # Start cpulimit for specific process
+            cpulimit -p $target_pid -l $cpu_limit -b
+            success_msg "CPU limit of $cpu_limit% applied to PID $target_pid"
+            ;;
+            
+        4)  # System-wide limit
+            echo -ne "\n${GREEN}Enter system-wide CPU limit percentage${NC} ${YELLOW}[1-100]${NC}: "
+            read cpu_limit
+            
+            if ! [[ $cpu_limit =~ ^[0-9]+$ ]] || [ $cpu_limit -lt 1 ] || [ $cpu_limit -gt 100 ]; then
+                error_msg "Invalid CPU limit"
+                return
+            fi
+            
+            # Create system-wide CPU limiting script
+            cat > /usr/local/bin/system-cpu-limit.sh << EOF
+#!/bin/bash
+while true; do
+    for pid in \$(ps -eo pid --no-headers); do
+        if [ \$pid -ne 1 ] && [ \$pid -ne \$\$ ]; then
+            cpulimit -p \$pid -l $cpu_limit -b 2>/dev/null
+        fi
+    done
+    sleep 60
+done
+EOF
+            chmod +x /usr/local/bin/system-cpu-limit.sh
+            
+            # Create systemd service for system-wide CPU limiting
+            cat > /etc/systemd/system/system-cpu-limit.service << EOF
+[Unit]
+Description=System-wide CPU Limiting Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/system-cpu-limit.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            
+            systemctl daemon-reload
+            systemctl enable system-cpu-limit.service
+            systemctl start system-cpu-limit.service
+            
+            success_msg "System-wide CPU limit of $cpu_limit% applied"
+            ;;
+            
+        5)  # Remove CPU limits
+            echo -e "\n${CYAN}╭───────────── Remove CPU Limits ───────────────╮${NC}"
+            echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Remove process-specific limits"
+            echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Remove system-wide limits"
+            echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Remove all limits"
+            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+            
+            echo -ne "\n${GREEN}Select option${NC} ${YELLOW}[1-3]${NC}: "
+            read remove_option
+            
+            case $remove_option in
+                1)
+                    killall cpulimit 2>/dev/null
+                    success_msg "Process-specific CPU limits removed"
+                    ;;
+                2)
+                    systemctl stop system-cpu-limit.service 2>/dev/null
+                    systemctl disable system-cpu-limit.service 2>/dev/null
+                    rm -f /etc/systemd/system/system-cpu-limit.service
+                    rm -f /usr/local/bin/system-cpu-limit.sh
+                    systemctl daemon-reload
+                    success_msg "System-wide CPU limits removed"
+                    ;;
+                3)
+                    killall cpulimit 2>/dev/null
+                    systemctl stop system-cpu-limit.service 2>/dev/null
+                    systemctl disable system-cpu-limit.service 2>/dev/null
+                    rm -f /etc/systemd/system/system-cpu-limit.service
+                    rm -f /usr/local/bin/system-cpu-limit.sh
+                    systemctl daemon-reload
+                    success_msg "All CPU limits removed"
+                    ;;
+                *)
+                    error_msg "Invalid option"
+                    return
+                    ;;
+            esac
+            ;;
+            
+        6)  # Return to menu
+            return
+            ;;
+            
+        *)
+            error_msg "Invalid option"
+            return
+            ;;
+    esac
+    
+    # Show real-time monitoring for options 1, 2, and 4 (profiles and system-wide)
+    if [[ $profile_choice =~ ^[124]$ ]] && [[ -n $cpu_limit ]]; then
+        echo -e "\n${CYAN}╭───────────── CPU Usage Monitor ────────────────╮${NC}"
+        echo -e "${CYAN}│${NC} ${GREEN}Monitoring CPU usage...${NC}"
+        echo -e "${CYAN}│${NC} ${YELLOW}Press Ctrl+C to stop monitoring${NC}"
+        echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+        
+        # Monitor CPU usage
+        while true; do
+            clear
+            echo -e "${CYAN}╭───────────── CPU Usage Stats ─────────────────╮${NC}"
+            echo -e "${CYAN}│${NC} ${GREEN}CPU Limit:${NC} ${cpu_limit}%"
+            echo -e "${CYAN}│${NC} ${GREEN}Current Usage:${NC}"
+            top -bn1 | head -n 3 | tail -n 2
+            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
+            sleep 2
+        done
+    fi
+}
+
 # Update main program loop
 while true; do
     show_welcome_banner
