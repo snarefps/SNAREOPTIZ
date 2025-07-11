@@ -998,11 +998,11 @@ show_system_status() {
 
         echo -e "${CYAN}│${NC} 📊 ${GREEN}system.slice:${NC}"
         echo -e "${CYAN}│${NC}    ├─ CPU Quota: ${system_cpu_quota:-Not Set}"
-        echo -e "${CYAN}│${NC}    └─ Memory Max: $(human_readable_bytes ${system_mem_max:-0})"
+        echo -e "${CYAN}│${NC}    └─ Memory Max: $(human_readable_bytes "${system_mem_max:-infinity}")"
         
         echo -e "${CYAN}│${NC} 📊 ${GREEN}user.slice:${NC}"
         echo -e "${CYAN}│${NC}    ├─ CPU Quota: ${user_cpu_quota:-Not Set}"
-        echo -e "${CYAN}│${NC}    └─ Memory Max: $(human_readable_bytes ${user_mem_max:-0})"
+        echo -e "${CYAN}│${NC}    └─ Memory Max: $(human_readable_bytes "${user_mem_max:-infinity}")"
     else
         echo -e "${CYAN}│${NC} ℹ️ ${YELLOW}systemd not found, cannot check slice limits.${NC}"
     fi
@@ -2245,10 +2245,22 @@ limit_cpu_usage() {
             echo -e "$drop_in_content" > /etc/systemd/system/system.slice.d/99-snare-optiz.conf
             echo -e "$drop_in_content" > /etc/systemd/system/user.slice.d/99-snare-optiz.conf
             
-            # Reload systemd and restart services to apply changes
+            # Reload systemd to make it aware of the new files
             systemctl daemon-reload
-            systemctl restart system.slice
-            systemctl restart user.slice
+            
+            # Apply properties to the running system immediately to avoid a reboot
+            info_msg "Applying live resource limits..."
+            systemctl set-property system.slice "CPUQuota=${cpu_limit}%"
+            systemctl set-property user.slice "CPUQuota=${cpu_limit}%"
+
+            if [ -n "$mem_limit" ]; then
+                systemctl set-property system.slice "MemoryMax=${mem_limit}G"
+                systemctl set-property user.slice "MemoryMax=${mem_limit}G"
+            else
+                # Unset memory limit if not provided
+                systemctl set-property system.slice MemoryMax=infinity
+                systemctl set-property user.slice MemoryMax=infinity
+            fi
             
             success_msg "System-wide resource limits applied and will persist across reboots."
             info_msg "CPUQuota=${cpu_limit}% | MemoryMax=${mem_limit:-Unlimited}G"
