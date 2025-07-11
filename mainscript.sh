@@ -950,6 +950,37 @@ show_system_status() {
     fi
     echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
     
+    # Resource Limits Status (cgroups)
+    echo -e "\n${CYAN}╭───────────── Resource Limits Status ────────────────╮${NC}"
+    if [ -d "/sys/fs/cgroup" ]; then
+        echo -e "${CYAN}│${NC} ✅ ${GREEN}cgroup v2 is active${NC}"
+        
+        # Check for SNARE OPTIZ cgroups
+        snare_cgroups=0
+        for cgroup in /sys/fs/cgroup/snareoptiz_*; do
+            if [ -d "$cgroup" ]; then
+                ((snare_cgroups++))
+                cgroup_name=$(basename "$cgroup")
+                cpu_usage=$(cat "$cgroup/cpu.stat" 2>/dev/null | grep "usage_usec" | awk '{print $2/1000000 "s"}')
+                mem_usage=$(cat "$cgroup/memory.current" 2>/dev/null | awk '{print $1/1024/1024 "MB"}')
+                mem_limit=$(cat "$cgroup/memory.max" 2>/dev/null | awk '{print $1/1024/1024 "MB"}')
+                num_procs=$(wc -l < "$cgroup/cgroup.procs" 2>/dev/null || echo 0)
+                
+                echo -e "${CYAN}│${NC} 📊 ${GREEN}Group:${NC} $cgroup_name"
+                echo -e "${CYAN}│${NC}    ├─ CPU Usage: $cpu_usage"
+                echo -e "${CYAN}│${NC}    ├─ Memory: $mem_usage / $mem_limit"
+                echo -e "${CYAN}│${NC}    └─ Processes: $num_procs"
+            fi
+        done
+        
+        if [ $snare_cgroups -eq 0 ]; then
+            echo -e "${CYAN}│${NC} ℹ️ ${YELLOW}No active resource limits${NC}"
+        fi
+    else
+        echo -e "${CYAN}│${NC} ❌ ${RED}cgroup v2 is not mounted${NC}"
+    fi
+    echo -e "${CYAN}╰─────────────────────────────────────────────────╯${NC}"
+
     # XanMod Kernel Check
     echo -e "\n${CYAN}╭───────────── XanMod Kernel Status ──────────╮${NC}"
     if uname -r | grep -q xanmod; then
@@ -1437,6 +1468,29 @@ check_critical_services() {
     done
 }
 
+check_cpu_limits() {
+    echo -e "\n${GREEN}[6/6] Checking CPU Limits...${NC}"
+    if [ -f "/var/run/cpu_limit_status" ]; then
+        source /var/run/cpu_limit_status
+        echo -e "${GREEN}✓ CPU Limiting is active${NC}"
+        echo -e "   Type: $TYPE"
+        echo -e "   Limit: $LIMIT%"
+        
+        if [[ "$TYPE" == "System-wide Limit" ]]; then
+            if systemctl is-active --quiet system-cpu-limit.service; then
+                echo -e "${GREEN}✓ System-wide CPU limit service is running${NC}"
+            else
+                echo -e "${RED}⚠ System-wide CPU limit service is not running${NC}"
+            fi
+        elif pgrep cpulimit >/dev/null; then
+            echo -e "${GREEN}✓ Process-specific CPU limits are active${NC}"
+            echo -e "   Active limits: $(pgrep cpulimit | wc -l)"
+        fi
+    else
+        echo -e "${YELLOW}ℹ No CPU limits are currently active${NC}"
+    fi
+}
+
 # Function to check if systemd is available
 is_systemd_available() {
     if command -v systemctl &>/dev/null && pidof systemd >/dev/null 2>&1; then
@@ -1472,8 +1526,11 @@ run_diagnostics() {
     check_filesystem_status
     
     # Service Checks
-    echo -e "\n${GREEN}[5/5] Validating System Services...${NC}"
+    echo -e "\n${GREEN}[5/6] Validating System Services...${NC}"
     check_critical_services
+    
+    # CPU Limit Checks
+    check_cpu_limits
     
     # Auto-run diagnostics when entering this section
     echo -e "\n${CYAN}=== AUTO-DIAGNOSTICS RESULTS ===${NC}"
@@ -1675,46 +1732,85 @@ show_main_menu() {
     echo -e "${GREEN}Enter your choice${NC} ${YELLOW}[1-13]${NC}: "
 }
 
+# Function to check if cgroup v2 is available and mounted
+check_cgroup_v2() {
+    if ! grep -q "cgroup2" /proc/filesystems; then
+        error_msg "cgroup v2 is not available in the kernel"
+        return 1
+    fi
+    
+    if ! mountpoint -q /sys/fs/cgroup; then
+        info_msg "Mounting cgroup v2 filesystem..."
+        mount -t cgroup2 none /sys/fs/cgroup
+    fi
+    
+    if [ ! -w "/sys/fs/cgroup" ]; then
+        error_msg "No write permission to cgroup filesystem"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to create cgroup
+create_cgroup() {
+    local name=$1
+    local path="/sys/fs/cgroup/snareoptiz_$name"
+    
+    if [ ! -d "$path" ]; then
+        mkdir -p "$path"
+    fi
+    echo "+cpu +memory" > "$path/cgroup.subtree_control"
+    echo "$path"
+}
+
+# Function to set CPU limit using cgroups
+set_cgroup_cpu_limit() {
+    local path=$1
+    local cpu_limit=$2
+    local max_usec=$((1000000 * cpu_limit / 100))
+    
+    echo "$max_usec" > "$path/cpu.max"
+    echo "100000" > "$path/cpu.weight"
+}
+
+# Function to add process to cgroup
+add_to_cgroup() {
+    local path=$1
+    local pid=$2
+    echo "$pid" > "$path/cgroup.procs"
+}
+
 # Function to limit CPU usage
 limit_cpu_usage() {
     section_header "CPU USAGE LIMITER"
     
-    # Check and install cpulimit if needed
-    if ! command -v cpulimit &>/dev/null; then
-        info_msg "Installing cpulimit..."
-        if command -v apt-get &>/dev/null; then
-            apt-get update && apt-get install -y cpulimit
-        elif command -v yum &>/dev/null; then
-            yum install -y cpulimit
-        elif command -v dnf &>/dev/null; then
-            dnf install -y cpulimit
-        else
-            error_msg "Could not install cpulimit. Please install it manually."
-            return
-        fi
+    # Check cgroup v2 availability
+    if ! check_cgroup_v2; then
+        return 1
     fi
     
-    # Show profile options
-    echo -e "${CYAN}╭───────────── CPU Limiting Profiles ──────────────╮${NC}"
+    # Show profile options with cgroups
+    echo -e "${CYAN}╭───────────── CPU Limiting Profiles (cgroups) ────────────╮${NC}"
     echo -e "${CYAN}│${NC} 🖥️  ${GREEN}Select CPU limiting profile:${NC}"
     echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Highload Profiles:"
-    echo -e "${CYAN}│${NC}    ├─ 1-24 vCPU"
-    echo -e "${CYAN}│${NC}    ├─ 4-96GB RAM"
-    echo -e "${CYAN}│${NC}    ├─ 100% CPU usage"
-    echo -e "${CYAN}│${NC}    └─ 100k-200k IOPS"
+    echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Highload Profiles (cgroups):"
+    echo -e "${CYAN}│${NC}    ├─ 1-24 vCPU support"
+    echo -e "${CYAN}│${NC}    ├─ Advanced resource control"
+    echo -e "${CYAN}│${NC}    ├─ Memory limits included"
+    echo -e "${CYAN}│${NC}    └─ Precise CPU allocation"
     echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Burstable Profiles:"
-    echo -e "${CYAN}│${NC}    ├─ 1-4 vCPU"
-    echo -e "${CYAN}│${NC}    ├─ 1-16GB RAM"
-    echo -e "${CYAN}│${NC}    ├─ 10-50% CPU usage"
-    echo -e "${CYAN}│${NC}    └─ 2k-10k IOPS"
+    echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Burstable Profiles (cgroups):"
+    echo -e "${CYAN}│${NC}    ├─ Flexible CPU limits"
+    echo -e "${CYAN}│${NC}    ├─ Fair resource sharing"
+    echo -e "${CYAN}│${NC}    ├─ Memory protection"
+    echo -e "${CYAN}│${NC}    └─ Automatic throttling"
     echo -e "${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Process-specific limit"
-    echo -e "${CYAN}│${NC} ${GREEN}[4]${NC} System-wide limit"
-    echo -e "${CYAN}│${NC} ${GREEN}[5]${NC} Remove CPU limits"
-    echo -e "${CYAN}│${NC} ${RED}[6]${NC} Return to menu"
-    echo -e "${CYAN}╰──────────────────────────────────────────────────╯${NC}"
+    echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Process Group Control"
+    echo -e "${CYAN}│${NC} ${GREEN}[4]${NC} System-wide Resource Control"
+    echo -e "${CYAN}│${NC} ${GREEN}[5]${NC} Remove Resource Limits"
+    echo -e "${CYAN}│${NC} ${RED}[6]${NC} Return to Menu"
+    echo -e "${CYAN}╰──────────────────────────────────────────────────────╯${NC}"
     
     echo -ne "\n${GREEN}Select profile${NC} ${YELLOW}[1-6]${NC}: "
     read profile_choice
@@ -1739,43 +1835,61 @@ limit_cpu_usage() {
                 return
             fi
             
-            # Set CPU limit based on vCPU selection (100% per vCPU)
+            # Create cgroup for highload profile
+            cgroup_path=$(create_cgroup "highload")
+            set_cgroup_cpu_limit "$cgroup_path" $((vcpu_limit * 100))
+            
+            # Set memory limit (4GB per vCPU)
+            echo "$((4 * 1024 * 1024 * 1024 * vcpu_limit))" > "$cgroup_path/memory.max"
+            
+            # Add current shell to cgroup
+            add_to_cgroup "$cgroup_path" "$$"
+            
             cpu_limit=$((vcpu_limit * 100))
+            success_msg "Highload profile activated with $vcpu_limit vCPUs"
             ;;
             
         2)  # Burstable Profile
             echo -e "\n${CYAN}╭───────────── Burstable Profile ───────────────╮${NC}"
-            echo -e "${CYAN}│${NC} ${GREEN}Select CPU limit:${NC}"
-            echo -e "${CYAN}│${NC} [1] 10% CPU usage"
-            echo -e "${CYAN}│${NC} [2] 20% CPU usage"
-            echo -e "${CYAN}│${NC} [3] 30% CPU usage"
-            echo -e "${CYAN}│${NC} [4] 40% CPU usage"
-            echo -e "${CYAN}│${NC} [5] 50% CPU usage"
+            echo -e "${CYAN}│${NC} ${GREEN}Select resource limit:${NC}"
+            echo -e "${CYAN}│${NC} [1] Light    (10% CPU, 1GB RAM)"
+            echo -e "${CYAN}│${NC} [2] Basic    (20% CPU, 2GB RAM)"
+            echo -e "${CYAN}│${NC} [3] Standard (30% CPU, 4GB RAM)"
+            echo -e "${CYAN}│${NC} [4] Enhanced (40% CPU, 8GB RAM)"
+            echo -e "${CYAN}│${NC} [5] Premium  (50% CPU, 16GB RAM)"
             echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
             
             echo -ne "\n${GREEN}Select option${NC} ${YELLOW}[1-5]${NC}: "
             read burst_option
             
             case $burst_option in
-                1) cpu_limit=10 ;;
-                2) cpu_limit=20 ;;
-                3) cpu_limit=30 ;;
-                4) cpu_limit=40 ;;
-                5) cpu_limit=50 ;;
+                1) cpu_limit=10; mem_limit=$((1 * 1024 * 1024 * 1024)) ;;
+                2) cpu_limit=20; mem_limit=$((2 * 1024 * 1024 * 1024)) ;;
+                3) cpu_limit=30; mem_limit=$((4 * 1024 * 1024 * 1024)) ;;
+                4) cpu_limit=40; mem_limit=$((8 * 1024 * 1024 * 1024)) ;;
+                5) cpu_limit=50; mem_limit=$((16 * 1024 * 1024 * 1024)) ;;
                 *) 
                     error_msg "Invalid selection"
                     return
                     ;;
             esac
+            
+            # Create cgroup for burstable profile
+            cgroup_path=$(create_cgroup "burstable")
+            set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
+            echo "$mem_limit" > "$cgroup_path/memory.max"
+            add_to_cgroup "$cgroup_path" "$$"
+            
+            success_msg "Burstable profile activated with ${cpu_limit}% CPU and $(( mem_limit / 1024 / 1024 / 1024 ))GB RAM limit"
             ;;
             
-        3)  # Process-specific limit
-            echo -e "\n${CYAN}╭───────────── Process Limit ──────────────────╮${NC}"
+        3)  # Process Group Control
+            echo -e "\n${CYAN}╭───────────── Process Group Control ────────────╮${NC}"
             echo -e "${CYAN}│${NC} ${GREEN}Running Processes:${NC}"
-            ps aux | grep -v "PID" | awk '{print NR") "$11" (PID: "$2") - CPU: "$3"%"}' | head -n 10
+            ps aux | grep -v "PID" | awk '{print NR") "$11" (PID: "$2") - CPU: "$3"%, MEM: "$4"%"}' | head -n 10
             echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
             
-            echo -ne "\n${GREEN}Enter PID to limit${NC}: "
+            echo -ne "\n${GREEN}Enter PID to control${NC}: "
             read target_pid
             
             if ! ps -p $target_pid > /dev/null; then
@@ -1791,12 +1905,20 @@ limit_cpu_usage() {
                 return
             fi
             
-            # Start cpulimit for specific process
-            cpulimit -p $target_pid -l $cpu_limit -b
-            success_msg "CPU limit of $cpu_limit% applied to PID $target_pid"
+            echo -ne "${GREEN}Enter memory limit in MB${NC} ${YELLOW}[default: 1024]${NC}: "
+            read mem_limit
+            mem_limit=${mem_limit:-1024}
+            
+            # Create cgroup for process
+            cgroup_path=$(create_cgroup "proc_${target_pid}")
+            set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
+            echo "$((mem_limit * 1024 * 1024))" > "$cgroup_path/memory.max"
+            add_to_cgroup "$cgroup_path" "$target_pid"
+            
+            success_msg "Resource limits applied to PID $target_pid"
             ;;
             
-        4)  # System-wide limit
+        4)  # System-wide Resource Control
             echo -ne "\n${GREEN}Enter system-wide CPU limit percentage${NC} ${YELLOW}[1-100]${NC}: "
             read cpu_limit
             
@@ -1805,44 +1927,31 @@ limit_cpu_usage() {
                 return
             fi
             
-            # Create system-wide CPU limiting script
-            cat > /usr/local/bin/system-cpu-limit.sh << EOF
-#!/bin/bash
-while true; do
-    for pid in \$(ps -eo pid --no-headers); do
-        if [ \$pid -ne 1 ] && [ \$pid -ne \$\$ ]; then
-            cpulimit -p \$pid -l $cpu_limit -b 2>/dev/null
-        fi
-    done
-    sleep 60
-done
-EOF
-            chmod +x /usr/local/bin/system-cpu-limit.sh
+            echo -ne "${GREEN}Enter system-wide memory limit in GB${NC} ${YELLOW}[default: 75% of total]${NC}: "
+            read mem_limit
             
-            # Create systemd service for system-wide CPU limiting
-            cat > /etc/systemd/system/system-cpu-limit.service << EOF
-[Unit]
-Description=System-wide CPU Limiting Service
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/system-cpu-limit.sh
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
+            if [ -z "$mem_limit" ]; then
+                total_mem=$(free -g | awk '/^Mem:/{print int($2 * 0.75)}')
+                mem_limit=$total_mem
+            fi
             
-            systemctl daemon-reload
-            systemctl enable system-cpu-limit.service
-            systemctl start system-cpu-limit.service
+            # Create system-wide cgroup
+            cgroup_path=$(create_cgroup "system")
+            set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
+            echo "$((mem_limit * 1024 * 1024 * 1024))" > "$cgroup_path/memory.max"
             
-            success_msg "System-wide CPU limit of $cpu_limit% applied"
+            # Move all processes except kernel processes to the cgroup
+            for pid in $(ps -eo pid --no-headers); do
+                if [ $pid -ne 1 ] && [ $pid -ne $$ ]; then
+                    add_to_cgroup "$cgroup_path" "$pid" 2>/dev/null
+                fi
+            done
+            
+            success_msg "System-wide resource limits applied"
             ;;
             
-        5)  # Remove CPU limits
-            echo -e "\n${CYAN}╭───────────── Remove CPU Limits ───────────────╮${NC}"
+        5)  # Remove Resource Limits
+            echo -e "\n${CYAN}╭───────────── Remove Resource Limits ────────────╮${NC}"
             echo -e "${CYAN}│${NC} ${GREEN}[1]${NC} Remove process-specific limits"
             echo -e "${CYAN}│${NC} ${GREEN}[2]${NC} Remove system-wide limits"
             echo -e "${CYAN}│${NC} ${GREEN}[3]${NC} Remove all limits"
@@ -1853,25 +1962,29 @@ EOF
             
             case $remove_option in
                 1)
-                    killall cpulimit 2>/dev/null
-                    success_msg "Process-specific CPU limits removed"
+                    for cgroup in /sys/fs/cgroup/snareoptiz_proc_*; do
+                        if [ -d "$cgroup" ]; then
+                            echo "" > "$cgroup/cgroup.procs" 2>/dev/null
+                            rmdir "$cgroup" 2>/dev/null
+                        fi
+                    done
+                    success_msg "Process-specific resource limits removed"
                     ;;
                 2)
-                    systemctl stop system-cpu-limit.service 2>/dev/null
-                    systemctl disable system-cpu-limit.service 2>/dev/null
-                    rm -f /etc/systemd/system/system-cpu-limit.service
-                    rm -f /usr/local/bin/system-cpu-limit.sh
-                    systemctl daemon-reload
-                    success_msg "System-wide CPU limits removed"
+                    if [ -d "/sys/fs/cgroup/snareoptiz_system" ]; then
+                        echo "" > "/sys/fs/cgroup/snareoptiz_system/cgroup.procs"
+                        rmdir "/sys/fs/cgroup/snareoptiz_system"
+                    fi
+                    success_msg "System-wide resource limits removed"
                     ;;
                 3)
-                    killall cpulimit 2>/dev/null
-                    systemctl stop system-cpu-limit.service 2>/dev/null
-                    systemctl disable system-cpu-limit.service 2>/dev/null
-                    rm -f /etc/systemd/system/system-cpu-limit.service
-                    rm -f /usr/local/bin/system-cpu-limit.sh
-                    systemctl daemon-reload
-                    success_msg "All CPU limits removed"
+                    for cgroup in /sys/fs/cgroup/snareoptiz_*; do
+                        if [ -d "$cgroup" ]; then
+                            echo "" > "$cgroup/cgroup.procs" 2>/dev/null
+                            rmdir "$cgroup" 2>/dev/null
+                        fi
+                    done
+                    success_msg "All resource limits removed"
                     ;;
                 *)
                     error_msg "Invalid option"
@@ -1890,23 +2003,35 @@ EOF
             ;;
     esac
     
-    # Show real-time monitoring for options 1, 2, and 4 (profiles and system-wide)
+    # Show status after applying CPU limits
     if [[ $profile_choice =~ ^[124]$ ]] && [[ -n $cpu_limit ]]; then
-        echo -e "\n${CYAN}╭───────────── CPU Usage Monitor ────────────────╮${NC}"
-        echo -e "${CYAN}│${NC} ${GREEN}Monitoring CPU usage...${NC}"
-        echo -e "${CYAN}│${NC} ${YELLOW}Press Ctrl+C to stop monitoring${NC}"
+        echo -e "\n${CYAN}╭───────────── CPU Limit Status ────────────────╮${NC}"
+        echo -e "${CYAN}│${NC} ${GREEN}✓ CPU Limit has been applied successfully${NC}"
+        echo -e "${CYAN}│${NC} ${GREEN}• Limit Type:${NC} $(case $profile_choice in
+            1) echo "Highload Profile";;
+            2) echo "Burstable Profile";;
+            4) echo "System-wide Limit";;
+        esac)"
+        echo -e "${CYAN}│${NC} ${GREEN}• CPU Limit:${NC} ${cpu_limit}%"
+        
+        if [[ $profile_choice == "4" ]]; then
+            echo -e "${CYAN}│${NC} ${GREEN}• Service Status:${NC} $(systemctl is-active system-cpu-limit.service)"
+            echo -e "${CYAN}│${NC} ${YELLOW}Note: CPU limits will persist after system reboot${NC}"
+        else
+            echo -e "${CYAN}│${NC} ${YELLOW}Note: Use option 5 to remove limits if needed${NC}"
+        fi
         echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
         
-        # Monitor CPU usage
-        while true; do
-            clear
-            echo -e "${CYAN}╭───────────── CPU Usage Stats ─────────────────╮${NC}"
-            echo -e "${CYAN}│${NC} ${GREEN}CPU Limit:${NC} ${cpu_limit}%"
-            echo -e "${CYAN}│${NC} ${GREEN}Current Usage:${NC}"
-            top -bn1 | head -n 3 | tail -n 2
-            echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
-            sleep 2
-        done
+        # Save CPU limit info for system status
+        cat > /var/run/cpu_limit_status << EOF
+TYPE=$(case $profile_choice in
+    1) echo "Highload Profile";;
+    2) echo "Burstable Profile";;
+    4) echo "System-wide Limit";;
+    *) echo "Process-specific";;
+esac)
+LIMIT=$cpu_limit
+EOF
     fi
 }
 
