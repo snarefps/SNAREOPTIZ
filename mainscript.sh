@@ -267,6 +267,28 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Check for bc and install if missing
+if ! command -v bc &> /dev/null; then
+    info_msg "'bc' is not installed. It is required for calculations. Attempting to install..."
+    if command -v apt-get &> /dev/null; then
+        apt-get update && apt-get install -y bc
+    elif command -v yum &> /dev/null; then
+        yum install -y bc
+    elif command -v dnf &> /dev/null; then
+        dnf install -y bc
+    else
+        error_msg "Could not install 'bc'. Please install it manually and run the script again."
+        exit 1
+    fi
+    
+    if ! command -v bc &> /dev/null; then
+        error_msg "Installation of 'bc' failed. Please install it manually."
+        exit 1
+    else
+        success_msg "'bc' has been successfully installed."
+    fi
+fi
+
 # Function to optimize DNS settings
 optimize_dns() {
     local description="This will optimize your DNS settings by:
