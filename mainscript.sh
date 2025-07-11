@@ -226,6 +226,22 @@ info_msg() {
     echo -e "ℹ${NC}"
 }
 
+# Function to display warning message
+warning_msg() {
+    echo -e "\n${ORANGE}╭─────── Warning ───────╮${NC}"
+    echo -e "${ORANGE}│${NC} ${YELLOW}⚠${NC} $1"
+    echo -e "${ORANGE}╰──────────────────────╯${NC}"
+    
+    # Show animated warning symbol
+    echo -ne "${YELLOW}"
+    for i in {1..3}; do
+        echo -ne "⚠"
+        sleep 0.1
+        echo -ne "\b"
+    done
+    echo -e "⚠${NC}"
+}
+
 # Must run as root
 if [ "$(id -u)" -ne 0 ]; then
     error_msg "This script must be run as root"
@@ -1811,15 +1827,35 @@ find_related_processes() {
     local search_term=$1
     local pids=""
     
-    # Find all processes matching the search term
-    pids=$(ps -ef | grep "$search_term" | grep -v "grep" | awk '{print $2}')
+    # Check if search term is provided
+    if [ -z "$search_term" ]; then
+        error_msg "Search term is required"
+        return 1
+    fi
     
-    # Find child processes
-    for pid in $pids; do
-        pids="$pids $(pgrep -P $pid)"
+    # Find all processes matching the search term
+    local matching_pids=$(ps -ef 2>/dev/null | grep "$search_term" | grep -v "grep" | awk '{print $2}' | sort -u)
+    
+    if [ -z "$matching_pids" ]; then
+        error_msg "No processes found matching '$search_term'"
+        return 1
+    fi
+    
+    # Add matching PIDs
+    pids="$matching_pids"
+    
+    # Find child processes for each matching PID
+    for pid in $matching_pids; do
+        if [ -n "$pid" ] && [ "$pid" -gt 0 ]; then
+            local child_pids=$(pgrep -P "$pid" 2>/dev/null)
+            if [ -n "$child_pids" ]; then
+                pids="$pids $child_pids"
+            fi
+        fi
     done
     
-    echo "$pids"
+    # Remove duplicates and return
+    echo "$pids" | tr ' ' '\n' | sort -u | tr '\n' ' '
 }
 
 # Function to create service cgroup
@@ -1829,31 +1865,68 @@ create_service_cgroup() {
     local mem_limit=$3
     local path="/sys/fs/cgroup/snareoptiz/service_${service_name}"
     
+    # Validate inputs
+    if [ -z "$service_name" ]; then
+        error_msg "Service name is required"
+        return 1
+    fi
+    
+    if [ -z "$cpu_limit" ] || ! [[ $cpu_limit =~ ^[0-9]+$ ]]; then
+        error_msg "Valid CPU limit is required"
+        return 1
+    fi
+    
     # Create base cgroup
     if ! mkdir -p "$path" 2>/dev/null; then
-        error_msg "Failed to create service cgroup"
+        error_msg "Failed to create service cgroup directory"
         return 1
     fi
     
     # Enable controllers
-    echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null
+    if ! echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null; then
+        error_msg "Failed to enable controllers in service cgroup"
+        rmdir "$path" 2>/dev/null
+        return 1
+    fi
     
     # Set CPU limit (percentage to microseconds)
     local max_usec=$((1000000 * cpu_limit / 100))
-    echo "$max_usec 1000000" > "$path/cpu.max"
+    if ! echo "$max_usec 1000000" > "$path/cpu.max" 2>/dev/null; then
+        error_msg "Failed to set CPU limit in service cgroup"
+        rmdir "$path" 2>/dev/null
+        return 1
+    fi
     
-    # Set memory limit (in bytes)
+    # Set memory limit (in bytes) if provided
     if [ -n "$mem_limit" ]; then
-        echo "$((mem_limit * 1024 * 1024 * 1024))" > "$path/memory.max"
+        if ! echo "$((mem_limit * 1024 * 1024 * 1024))" > "$path/memory.max" 2>/dev/null; then
+            error_msg "Failed to set memory limit in service cgroup"
+            rmdir "$path" 2>/dev/null
+            return 1
+        fi
     fi
     
     # Find and add all related processes
     local pids=$(find_related_processes "$service_name")
-    for pid in $pids; do
-        echo "$pid" > "$path/cgroup.procs" 2>/dev/null
-    done
+    if [ $? -eq 0 ] && [ -n "$pids" ]; then
+        local added_count=0
+        for pid in $pids; do
+            if [ -n "$pid" ] && [ "$pid" -gt 0 ]; then
+                if add_to_cgroup "$path" "$pid"; then
+                    ((added_count++))
+                fi
+            fi
+        done
+        
+        if [ $added_count -gt 0 ]; then
+            success_msg "Service '$service_name' limited to ${cpu_limit}% CPU (${added_count} processes)"
+        else
+            warning_msg "No processes were added to the cgroup"
+        fi
+    else
+        warning_msg "No processes found for service '$service_name'"
+    fi
     
-    success_msg "Service '$service_name' limited to ${cpu_limit}% CPU"
     if [ -n "$mem_limit" ]; then
         success_msg "Memory limit set to ${mem_limit}GB"
     fi
@@ -1869,7 +1942,14 @@ create_cgroup() {
     # Check if directory exists and remove if necessary
     if [ -d "$path" ]; then
         info_msg "Removing existing cgroup..."
-        echo "" > "$path/cgroup.procs" 2>/dev/null
+        # Move all processes out before removing
+        if [ -f "$path/cgroup.procs" ]; then
+            while read -r pid; do
+                if [ -n "$pid" ]; then
+                    echo "$pid" > "/sys/fs/cgroup/snareoptiz/cgroup.procs" 2>/dev/null
+                fi
+            done < "$path/cgroup.procs"
+        fi
         rmdir "$path" 2>/dev/null
     fi
     
@@ -1880,18 +1960,25 @@ create_cgroup() {
     fi
     
     # Set permissions
-    chmod 755 "$path"
+    chmod 755 "$path" 2>/dev/null
     
     # Enable controllers in parent first
-    echo "+cpu +memory" > "/sys/fs/cgroup/snareoptiz/cgroup.subtree_control"
+    if ! echo "+cpu +memory" > "/sys/fs/cgroup/snareoptiz/cgroup.subtree_control" 2>/dev/null; then
+        error_msg "Failed to enable controllers in parent cgroup"
+        rmdir "$path" 2>/dev/null
+        return 1
+    fi
     
     # Enable controllers in new cgroup
-    echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null
+    if ! echo "+cpu +memory" > "$path/cgroup.subtree_control" 2>/dev/null; then
+        error_msg "Failed to enable controllers in new cgroup"
+        rmdir "$path" 2>/dev/null
+        return 1
+    fi
     
     # Verify controllers are enabled
-    if ! grep -q "cpu" "$path/cgroup.controllers" 2>/dev/null || \
-       ! grep -q "memory" "$path/cgroup.controllers" 2>/dev/null; then
-        error_msg "Required controllers not available"
+    if [ ! -f "$path/cpu.max" ] || [ ! -f "$path/memory.max" ]; then
+        error_msg "Required controllers not available in cgroup"
         rmdir "$path" 2>/dev/null
         return 1
     fi
@@ -1927,7 +2014,32 @@ set_cgroup_cpu_limit() {
 add_to_cgroup() {
     local path=$1
     local pid=$2
-    echo "$pid" > "$path/cgroup.procs"
+    
+    # Check if cgroup exists
+    if [ ! -d "$path" ]; then
+        error_msg "Cgroup does not exist: $path"
+        return 1
+    fi
+    
+    # Check if process exists
+    if ! ps -p "$pid" > /dev/null 2>&1; then
+        error_msg "Process $pid does not exist"
+        return 1
+    fi
+    
+    # Check if cgroup.procs file exists and is writable
+    if [ ! -w "$path/cgroup.procs" ]; then
+        error_msg "Cannot write to cgroup.procs in $path"
+        return 1
+    fi
+    
+    # Add process to cgroup
+    if ! echo "$pid" > "$path/cgroup.procs" 2>/dev/null; then
+        error_msg "Failed to add process $pid to cgroup"
+        return 1
+    fi
+    
+    return 0
 }
 
 # Function to limit CPU usage
@@ -1973,13 +2085,13 @@ limit_cpu_usage() {
             if command -v systemctl >/dev/null 2>&1; then
                 echo -e "${CYAN}│${NC} ${YELLOW}Active Services:${NC}"
                 systemctl list-units --type=service --state=running | grep ".service" | head -n 5 | \
-                    awk '{print "│ " NR ") " $1 " (" $4 ")"}'
+                    awk '{print "│ " NR ") " $1 " (" $4 ")"}' || echo "│ No active services found"
             fi
             
             # Show top CPU consuming processes
             echo -e "${CYAN}│${NC} ${YELLOW}Top CPU Processes:${NC}"
             ps -eo comm,pid,ppid,pcpu --sort=-pcpu | head -n 6 | tail -n 5 | \
-                awk '{printf "│ %d) %s (PID: %s, CPU: %.1f%%)\n", NR, $1, $2, $4}'
+                awk '{printf "│ %d) %s (PID: %s, CPU: %.1f%%)\n", NR, $1, $2, $4}' || echo "│ No processes found"
             
             echo -e "${CYAN}╰──────────────────────────────────────────────────────╯${NC}"
             
@@ -2019,7 +2131,7 @@ limit_cpu_usage() {
                 # Show current resource usage
                 echo -e "\n${CYAN}Current Resource Usage:${NC}"
                 ps aux | grep "$service_name" | grep -v "grep" | \
-                    awk '{cpu+=$3; mem+=$4} END {print "CPU: " cpu "%, Memory: " mem "%"}'
+                    awk '{cpu+=$3; mem+=$4} END {if(cpu>0 || mem>0) print "CPU: " cpu "%, Memory: " mem "%"; else print "No processes found"}' || echo "No processes found"
             fi
             ;;
             
@@ -2050,17 +2162,21 @@ limit_cpu_usage() {
             
             # Create cgroup for burstable profile
             cgroup_path=$(create_cgroup "burstable")
-            set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
-            echo "$mem_limit" > "$cgroup_path/memory.max"
-            add_to_cgroup "$cgroup_path" "$$"
-            
-            success_msg "Burstable profile activated with ${cpu_limit}% CPU and $(( mem_limit / 1024 / 1024 / 1024 ))GB RAM limit"
+            if [ -n "$cgroup_path" ]; then
+                set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
+                echo "$mem_limit" > "$cgroup_path/memory.max"
+                add_to_cgroup "$cgroup_path" "$$"
+                
+                success_msg "Burstable profile activated with ${cpu_limit}% CPU and $(( mem_limit / 1024 / 1024 / 1024 ))GB RAM limit"
+            else
+                error_msg "Failed to create burstable cgroup"
+            fi
             ;;
             
         3)  # Process Group Control
             echo -e "\n${CYAN}╭───────────── Process Group Control ────────────╮${NC}"
             echo -e "${CYAN}│${NC} ${GREEN}Running Processes:${NC}"
-            ps aux | grep -v "PID" | awk '{print NR") "$11" (PID: "$2") - CPU: "$3"%, MEM: "$4"%"}' | head -n 10
+            ps aux | grep -v "PID" | awk '{print NR") "$11" (PID: "$2") - CPU: "$3"%, MEM: "$4"%"}' | head -n 10 || echo "│ No processes found"
             echo -e "${CYAN}╰──────────────────────────────────────────────╯${NC}"
             
             echo -ne "\n${GREEN}Enter PID to control${NC}: "
@@ -2085,11 +2201,15 @@ limit_cpu_usage() {
             
             # Create cgroup for process
             cgroup_path=$(create_cgroup "proc_${target_pid}")
-            set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
-            echo "$((mem_limit * 1024 * 1024))" > "$cgroup_path/memory.max"
-            add_to_cgroup "$cgroup_path" "$target_pid"
-            
-            success_msg "Resource limits applied to PID $target_pid"
+            if [ -n "$cgroup_path" ]; then
+                set_cgroup_cpu_limit "$cgroup_path" "$cpu_limit"
+                echo "$((mem_limit * 1024 * 1024))" > "$cgroup_path/memory.max"
+                add_to_cgroup "$cgroup_path" "$target_pid"
+                
+                success_msg "Resource limits applied to PID $target_pid"
+            else
+                error_msg "Failed to create process cgroup"
+            fi
             ;;
             
         4)  # System Protection Limits
@@ -2105,7 +2225,7 @@ limit_cpu_usage() {
             read mem_limit
             
             if [ -z "$mem_limit" ]; then
-                total_mem=$(free -g | awk '/^Mem:/{print int($2 * 0.75)}')
+                total_mem=$(free -g | awk '/^Mem:/{print int($2 * 0.75)}' 2>/dev/null || echo "4")
                 mem_limit=$total_mem
             fi
             
@@ -2146,7 +2266,7 @@ limit_cpu_usage() {
             fi
             
             # Move all processes except kernel processes to the cgroup
-            for pid in $(ps -eo pid --no-headers); do
+            for pid in $(ps -eo pid --no-headers 2>/dev/null); do
                 if [ $pid -ne 1 ] && [ $pid -ne $$ ] && [ -d "/proc/$pid" ]; then
                     echo "$pid" > "$system_cgroup/cgroup.procs" 2>/dev/null
                 fi
@@ -2163,7 +2283,7 @@ After=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash -c 'mkdir -p /sys/fs/cgroup/snareoptiz/system && echo "+cpu +memory" > /sys/fs/cgroup/snareoptiz/system/cgroup.subtree_control && echo "$max_usec 1000000" > /sys/fs/cgroup/snareoptiz/system/cpu.max && echo "$((mem_limit * 1024 * 1024 * 1024))" > /sys/fs/cgroup/snareoptiz/system/memory.max && for pid in \$(ps -eo pid --no-headers); do if [ \$pid -ne 1 ] && [ -d "/proc/\$pid" ]; then echo "\$pid" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs 2>/dev/null; fi; done'
+ExecStart=/bin/bash -c 'mkdir -p /sys/fs/cgroup/snareoptiz/system && echo "+cpu +memory" > /sys/fs/cgroup/snareoptiz/system/cgroup.subtree_control && echo "$max_usec 1000000" > /sys/fs/cgroup/snareoptiz/system/cpu.max && echo "$((mem_limit * 1024 * 1024 * 1024))" > /sys/fs/cgroup/snareoptiz/system/memory.max && for pid in \$(ps -eo pid --no-headers 2>/dev/null); do if [ \$pid -ne 1 ] && [ -d "/proc/\$pid" ]; then echo "\$pid" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs 2>/dev/null; fi; done'
 ExecStop=/bin/bash -c 'echo "" > /sys/fs/cgroup/snareoptiz/system/cgroup.procs; rmdir /sys/fs/cgroup/snareoptiz/system'
 
 [Install]
@@ -2188,7 +2308,7 @@ EOF
             
             case $remove_option in
                 1)
-                    for cgroup in /sys/fs/cgroup/snareoptiz_proc_*; do
+                    for cgroup in /sys/fs/cgroup/snareoptiz/proc_*; do
                         if [ -d "$cgroup" ]; then
                             echo "" > "$cgroup/cgroup.procs" 2>/dev/null
                             rmdir "$cgroup" 2>/dev/null
@@ -2197,15 +2317,15 @@ EOF
                     success_msg "Process-specific resource limits removed"
                     ;;
                 2)
-                    if [ -d "/sys/fs/cgroup/snareoptiz_system" ]; then
-                        echo "" > "/sys/fs/cgroup/snareoptiz_system/cgroup.procs"
-                        rmdir "/sys/fs/cgroup/snareoptiz_system"
+                    if [ -d "/sys/fs/cgroup/snareoptiz/system" ]; then
+                        echo "" > "/sys/fs/cgroup/snareoptiz/system/cgroup.procs"
+                        rmdir "/sys/fs/cgroup/snareoptiz/system"
                     fi
                     success_msg "System-wide resource limits removed"
                     ;;
                 3)
-                    for cgroup in /sys/fs/cgroup/snareoptiz_*; do
-                        if [ -d "$cgroup" ]; then
+                    for cgroup in /sys/fs/cgroup/snareoptiz/*; do
+                        if [ -d "$cgroup" ] && [ "$(basename "$cgroup")" != "snareoptiz" ]; then
                             echo "" > "$cgroup/cgroup.procs" 2>/dev/null
                             rmdir "$cgroup" 2>/dev/null
                         fi
@@ -2234,14 +2354,14 @@ EOF
         echo -e "\n${CYAN}╭───────────── CPU Limit Status ────────────────╮${NC}"
         echo -e "${CYAN}│${NC} ${GREEN}✓ CPU Limit has been applied successfully${NC}"
         echo -e "${CYAN}│${NC} ${GREEN}• Limit Type:${NC} $(case $profile_choice in
-            1) echo "Highload Profile";;
+            1) echo "Service/Group Control";;
             2) echo "Burstable Profile";;
             4) echo "System-wide Limit";;
         esac)"
         echo -e "${CYAN}│${NC} ${GREEN}• CPU Limit:${NC} ${cpu_limit}%"
         
         if [[ $profile_choice == "4" ]]; then
-            echo -e "${CYAN}│${NC} ${GREEN}• Service Status:${NC} $(systemctl is-active system-cpu-limit.service)"
+            echo -e "${CYAN}│${NC} ${GREEN}• Service Status:${NC} $(systemctl is-active system-resource-limit.service 2>/dev/null || echo "Not running")"
             echo -e "${CYAN}│${NC} ${YELLOW}Note: CPU limits will persist after system reboot${NC}"
         else
             echo -e "${CYAN}│${NC} ${YELLOW}Note: Use option 5 to remove limits if needed${NC}"
@@ -2251,7 +2371,7 @@ EOF
         # Save CPU limit info for system status
         cat > /var/run/cpu_limit_status << EOF
 TYPE=$(case $profile_choice in
-    1) echo "Highload Profile";;
+    1) echo "Service/Group Control";;
     2) echo "Burstable Profile";;
     4) echo "System-wide Limit";;
     *) echo "Process-specific";;
